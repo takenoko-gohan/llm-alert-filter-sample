@@ -49,3 +49,7 @@ Slack Appの`Interactivity`を有効化し、以下のリクエストURLを設�
 <llm-alert-filter-collectorのfunction URL>/feedback
 ```
 
+## 検証方法
+
+通知用Lambda関数にサブスクリプションを設定しているCloudWatch Logs ロググループ`llm-alert-filter-test1`もしくは
+`llm-alert-filter-test1`に`error`を含むログを送信することで、Slackに通知されることを確認できます。
