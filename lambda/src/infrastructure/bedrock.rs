@@ -82,7 +82,7 @@ impl Client {
         let msg = Message::builder()
             .role(ConversationRole::User)
             .content(ContentBlock::Text(format!(
-                "feedback>{}</feedback><target_log>{}</target_log>",
+                "<feedback>{}</feedback><target_log>{}</target_log>",
                 serde_json::to_string(
                     &feedback
                         .into_iter()
