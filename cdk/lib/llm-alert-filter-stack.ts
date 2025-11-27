@@ -12,16 +12,6 @@ export class LlmAlertFilterStack extends cdk.Stack {
 			description: "Slack Channel",
 		});
 
-		const slackToken = new cdk.CfnParameter(this, "SlackToken", {
-			type: "String",
-			description: "Slack Token",
-		});
-
-		const signingSecret = new cdk.CfnParameter(this, "SigningSecret", {
-			type: "String",
-			description: "Slack Signing Secret",
-		});
-
 		// DynamoDB Table
 		const table = new cdk.aws_dynamodb.Table(this, "FeedbackTable", {
 			tableName: "llm_alert_filter_feedback",
@@ -64,9 +54,7 @@ export class LlmAlertFilterStack extends cdk.Stack {
 			{
 				secretName: "llm-alert-filter-notifier",
 				secretObjectValue: {
-					SLACK_TOKEN: cdk.SecretValue.unsafePlainText(
-						slackToken.valueAsString,
-					),
+					SLACK_TOKEN: cdk.SecretValue.unsafePlainText("dummy"),
 				},
 			},
 		);
@@ -77,12 +65,8 @@ export class LlmAlertFilterStack extends cdk.Stack {
 			{
 				secretName: "llm-alert-filter-collector",
 				secretObjectValue: {
-					SIGNING_SECRET: cdk.SecretValue.unsafePlainText(
-						signingSecret.valueAsString,
-					),
-					SLACK_TOKEN: cdk.SecretValue.unsafePlainText(
-						slackToken.valueAsString,
-					),
+					SIGNING_SECRET: cdk.SecretValue.unsafePlainText("dummy"),
+					SLACK_TOKEN: cdk.SecretValue.unsafePlainText("dummy"),
 				},
 			},
 		);

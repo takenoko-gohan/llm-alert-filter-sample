@@ -24,9 +24,9 @@ Bedrockを使用して、エラーログのフィルタリングを行うサン�
 - [Zig](https://ziglang.org/learn/getting-started/)
 - [CDK](https://docs.aws.amazon.com/ja_jp/cdk/v2/guide/getting_started.html)
 
-また、利用するBedrockのモデルへのリクエスト申請が必要です。
-使用するモデルは以下に定義されてます。
-https://github.com/takenoko-gohan/llm-alert-filter-sample/blob/main/cdk/lib/llm-alert-filter-stack.ts#L173
+また、利用するBedrockのモデルへのリクエスト申請が必要です。  
+使用するモデルは以下に定義されてます。  
+https://github.com/takenoko-gohan/llm-alert-filter-sample/blob/main/cdk/lib/llm-alert-filter-stack.ts#L157
 
 ### 2. Slack Appの作成とインストール
 
@@ -40,12 +40,21 @@ https://github.com/takenoko-gohan/llm-alert-filter-sample/blob/main/cdk/lib/llm-
 ```bash
 cd cdk
 npm install
-cdk deploy --parameters SlackChannelId=="<通知したいSlackのチャンネルID>" --parameters SlackToken="<取得したSlack AppのBot User OAuth Token>" --parameters SigningSecret="<取得したSlack AppのSigning Secret>"
+cdk deploy LlmAlertFilterStack --parameters SlackChannelId="<通知したいSlackのチャンネルID>"
 ```
 
 デプロイ後、作成したLambda関数`llm-alert-filter-collector`のfunction URLを取得しておきます。
 
-### 4. Slack AppのInteractivityを有効化
+### 4. Secretの値を更新
+
+以下このコマンドを実行してSecretの値を更新します。
+
+```bash
+aws secretsmanager put-secret-value --region us-east-1 --secret-id llm-alert-filter-notifier --secret-string "{\"SLACK_TOKEN\":\"<取得したSlack AppのBot User OAuth Token>\"}"
+aws secretsmanager put-secret-value --region us-east-1 --secret-id llm-alert-filter-collector --secret-string "{\"SIGNING_SECRET\":\"<取得したSlack AppのSigning Secret>\",\"SLACK_TOKEN\":\"<取得したSlack AppのBot User OAuth Token>\"}"
+```
+
+### 5. Slack AppのInteractivityを有効化
 
 Slack Appの`Interactivity`を有効化し、以下のリクエストURLを設定します。
 
