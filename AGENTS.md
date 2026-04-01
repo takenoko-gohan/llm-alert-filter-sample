@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## languages
+
+Please use Japanese only.
+
 ## Overview
 
 This repository contains a serverless sample that uses Amazon Bedrock to filter CloudWatch Logs error alerts before posting to Slack.
