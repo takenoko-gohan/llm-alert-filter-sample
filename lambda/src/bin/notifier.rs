@@ -14,10 +14,6 @@ async fn main() -> Result<(), Error> {
         .expect("BEDROCK_TOP_P is not set")
         .parse()
         .expect("BEDROCK_TOP_P is not a valid float");
-    let temperature: f32 = std::env::var("BEDROCK_TEMPERATURE")
-        .expect("BEDROCK_TEMPERATURE is not set")
-        .parse()
-        .expect("BEDROCK_TEMPERATURE is not a valid float");
     let slack_channel_id = std::env::var("SLACK_CHANNEL_ID").expect("SLACK_CHANNEL is not set");
     let secret_id = std::env::var("SECRET_ID").expect("SECRET_ID is not set");
 
@@ -27,7 +23,6 @@ async fn main() -> Result<(), Error> {
         .inner_client(aws_sdk_bedrockruntime::Client::new(&config))
         .model_id(model_id)
         .top_p(top_p)
-        .temperature(temperature)
         .build();
     let secrets_client = secrets::Client::builder()
         .inner(aws_sdk_secretsmanager::Client::new(&config))

@@ -69,7 +69,6 @@ pub struct Client {
     inner_client: aws_sdk_bedrockruntime::Client,
     model_id: String,
     top_p: f32,
-    temperature: f32,
 }
 
 impl Client {
@@ -100,7 +99,6 @@ impl Client {
 
         let inference_config = InferenceConfiguration::builder()
             .top_p(self.top_p)
-            .temperature(self.temperature)
             .build();
         let tool_config = ToolConfiguration::builder()
             .tools(Tool::ToolSpec(
