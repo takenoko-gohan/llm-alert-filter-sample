@@ -16,6 +16,10 @@ async fn main() -> Result<(), Error> {
         .expect("BEDROCK_TOP_P is not a valid float");
     let slack_channel_id = std::env::var("SLACK_CHANNEL_ID").expect("SLACK_CHANNEL is not set");
     let secret_id = std::env::var("SECRET_ID").expect("SECRET_ID is not set");
+    let prompt_language: bedrock::PromptLanguage = std::env::var("PROMPT_LANGUAGE")
+        .unwrap_or_else(|_| "en".to_string())
+        .parse()
+        .expect("PROMPT_LANGUAGE is invalid");
 
     let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&config);
@@ -23,6 +27,7 @@ async fn main() -> Result<(), Error> {
         .inner_client(aws_sdk_bedrockruntime::Client::new(&config))
         .model_id(model_id)
         .top_p(top_p)
+        .prompt_language(prompt_language)
         .build();
     let secrets_client = secrets::Client::builder()
         .inner(aws_sdk_secretsmanager::Client::new(&config))

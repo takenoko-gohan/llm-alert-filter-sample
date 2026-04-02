@@ -8,33 +8,51 @@ use aws_smithy_types::Document;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::fmt;
 use typed_builder::TypedBuilder;
 
-const SYSTEM_PROMPT: &str = "
-<role>
-You are a log monitor.
-</role>
-<question>
-Refer to the list of past notification feedback (`feedback`) to determine whether a notification is required for the currently occurring error log (`target_log`).
-</question>
-<data_info>
-- feedback: A list of feedback regarding notifications from the operator
-  - created_at: The date and time when the feedback was added
-  - message: The content of the error log that received feedback
-  - needs_notification: Whether a notification is required (`true` means required, `false` means not required)
-  - reason: Reasons for necessity or non-necessity (optional)
-- target_log: The error log subject to the decision
-  - message: The content of the log
-  - timestamp: The date and time when the log was generated
-</data_info>
-<rule>
-- Think step-by-step.
-- Make a decision only if sufficient inference can be drawn from the feedback content; if not, always return `true`.
-- Treat feedback as similar if the `message` in both `feedback` and `target_log` matches 80% or more.
-- If the referenced `feedback` for inference contains a `reason`, take its content into account.
-- If similar feedback contradict each other, prioritize the feedback with the most recent `created_at` timestamp.
-</rule>
-";
+const SYSTEM_PROMPT_EN: &str = include_str!("prompts/system_prompt_en.txt");
+const SYSTEM_PROMPT_JA: &str = include_str!("prompts/system_prompt_ja.txt");
+
+#[derive(Debug, Clone, Default)]
+pub enum PromptLanguage {
+    #[default]
+    En,
+    Ja,
+}
+
+impl PromptLanguage {
+    fn system_prompt(&self) -> &str {
+        match self {
+            PromptLanguage::En => SYSTEM_PROMPT_EN,
+            PromptLanguage::Ja => SYSTEM_PROMPT_JA,
+        }
+    }
+}
+
+impl std::str::FromStr for PromptLanguage {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "en" => Ok(PromptLanguage::En),
+            "ja" => Ok(PromptLanguage::Ja),
+            other => Err(format!(
+                "unsupported PROMPT_LANGUAGE: '{}' (expected 'en' or 'ja')",
+                other
+            )),
+        }
+    }
+}
+
+impl fmt::Display for PromptLanguage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PromptLanguage::En => write!(f, "en"),
+            PromptLanguage::Ja => write!(f, "ja"),
+        }
+    }
+}
 
 #[derive(Serialize, TypedBuilder)]
 struct FeedbackDto {
@@ -69,6 +87,8 @@ pub struct Client {
     inner_client: aws_sdk_bedrockruntime::Client,
     model_id: String,
     top_p: f32,
+    #[builder(default)]
+    prompt_language: PromptLanguage,
 }
 
 impl Client {
@@ -111,7 +131,7 @@ impl Client {
             .inner_client
             .converse()
             .model_id(&self.model_id)
-            .system(SystemContentBlock::Text(SYSTEM_PROMPT.into()))
+            .system(SystemContentBlock::Text(self.system_prompt().to_string()))
             .messages(msg)
             .inference_config(inference_config)
             .tool_config(tool_config)
@@ -178,5 +198,9 @@ impl Client {
         }
 
         Ok(needs_notification.ok_or("Failed not found toolUse")?)
+    }
+
+    fn system_prompt(&self) -> &str {
+        self.prompt_language.system_prompt()
     }
 }
