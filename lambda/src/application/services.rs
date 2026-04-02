@@ -33,7 +33,7 @@ impl NotificationService {
 
                 if self
                     .bedrock_client
-                    .needs_notification(feedback.clone(), message.clone(), now_rfc3339())
+                    .needs_notification(&feedback, &message, &now_rfc3339())
                     .await?
                 {
                     self.slack_client

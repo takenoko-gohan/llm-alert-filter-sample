@@ -251,7 +251,9 @@ impl Client {
                 Err(format!(
                     "Failed to open modal: {{ error: \"{}\", response_metadata: \"{}\" }}",
                     resp.error.unwrap_or_default(),
-                    resp.response_metadata.unwrap_or_default(),
+                    resp.response_metadata
+                        .map(|v| serde_json::to_string(&v).unwrap_or_default())
+                        .unwrap_or_else(|| "(no metadata)".to_string()),
                 )
                 .into())
             }

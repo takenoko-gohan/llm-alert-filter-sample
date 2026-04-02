@@ -44,16 +44,16 @@ struct FeedbackDto {
     reason: Option<String>,
 }
 
-impl TryFrom<Feedback> for FeedbackDto {
+impl TryFrom<&Feedback> for FeedbackDto {
     type Error = Box<dyn std::error::Error>;
 
-    fn try_from(value: Feedback) -> Result<Self, Self::Error> {
+    fn try_from(value: &Feedback) -> Result<Self, Self::Error> {
         let created_at = DateTime::<Utc>::try_from(value.created_at().to_owned())?;
         Ok(Self::builder()
             .created_at(created_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-            .message(value.message().into())
+            .message(value.message().to_string())
             .needs_notification(value.needs_notification())
-            .reason(value.reason().map(|r| r.into()))
+            .reason(value.reason().map(|r| r.to_string()))
             .build())
     }
 }
@@ -74,32 +74,29 @@ pub struct Client {
 impl Client {
     pub(crate) async fn needs_notification(
         &self,
-        feedback: Vec<Feedback>,
-        message: String,
-        timestamp: String,
+        feedback: &[Feedback],
+        message: &str,
+        timestamp: &str,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let msg = Message::builder()
             .role(ConversationRole::User)
             .content(ContentBlock::Text(format!(
                 "<feedback>{}</feedback><target_log>{}</target_log>",
-                serde_json::to_string(
-                    &feedback
-                        .into_iter()
-                        .map(|v| v.try_into())
-                        .collect::<Result<Vec<FeedbackDto>, _>>()?
-                )?,
+                serde_json::to_string(&feedback.iter().map(|v| v.try_into()).collect::<Result<
+                    Vec<FeedbackDto>,
+                    _,
+                >>(
+                )?)?,
                 serde_json::to_string(
                     &TargetLog::builder()
-                        .message(message)
-                        .timestamp(timestamp)
+                        .message(message.to_string())
+                        .timestamp(timestamp.to_string())
                         .build()
                 )?
             )))
             .build()?;
 
-        let inference_config = InferenceConfiguration::builder()
-            .top_p(self.top_p)
-            .build();
+        let inference_config = InferenceConfiguration::builder().top_p(self.top_p).build();
         let tool_config = ToolConfiguration::builder()
             .tools(Tool::ToolSpec(
                 ToolSpecification::builder()
