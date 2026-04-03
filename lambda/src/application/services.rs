@@ -40,18 +40,17 @@ impl NotificationService {
                 let reason = decision.matched_feedback_reason().unwrap_or("");
 
                 let is_high_confidence = confidence.is_some_and(|c| c.is_high());
-                let should_notify =
-                    if !decision.needs_notification() && !is_high_confidence {
-                        tracing::warn!(
-                            log_group = %log_group,
-                            confidence = ?confidence,
-                            reason = %reason,
-                            "Non-high confidence suppression overridden to notify (fail-safe)"
-                        );
-                        true
-                    } else {
-                        decision.needs_notification()
-                    };
+                let should_notify = if !decision.needs_notification() && !is_high_confidence {
+                    tracing::warn!(
+                        log_group = %log_group,
+                        confidence = ?confidence,
+                        reason = %reason,
+                        "Non-high confidence suppression overridden to notify (fail-safe)"
+                    );
+                    true
+                } else {
+                    decision.needs_notification()
+                };
 
                 if should_notify {
                     self.slack_client
