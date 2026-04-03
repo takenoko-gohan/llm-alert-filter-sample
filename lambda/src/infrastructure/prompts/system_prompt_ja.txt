@@ -29,3 +29,11 @@ c. 類似するフィードバックが複数あり矛盾する場合は、`crea
 d. 類似するフィードバックが存在しない場合は `needs_notification = true` を返すこと（フェイルセーフ: 不確実な場合は常に通知）。
 e. 判断に迷った場合は常に `true` を返すこと。偽陰性（アラートの見逃し）は偽陽性（余分なアラート）よりも深刻である。
 </decision_rules>
+
+<confidence_criteria>
+利用可能なフィードバックからどれだけ明確に判断できるかに基づいて `confidence` を設定すること:
+- "high": 高い類似度（80%以上）のフィードバックが存在し、一貫した明確な判断が可能。
+- "medium": 類似するフィードバックは存在するが曖昧さがある（例: 部分一致、矛盾するエントリを新しさで解決）。
+- "low": 類似するフィードバックが見つからない、または判断が推測に近い。
+`needs_notification = false` は `confidence = "high"` の場合のみ返すこと。confidence が "medium" または "low" の場合は常に `needs_notification = true` とすること。
+</confidence_criteria>

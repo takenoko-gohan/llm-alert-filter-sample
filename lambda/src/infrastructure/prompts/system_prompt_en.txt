@@ -29,3 +29,11 @@ c. When multiple similar feedback entries contradict each other, prioritize the 
 d. If no similar feedback exists, return `needs_notification = true` (fail-safe: always notify when uncertain).
 e. When in doubt, always return `true`. False negatives (missed alerts) are worse than false positives (extra alerts).
 </decision_rules>
+
+<confidence_criteria>
+Set `confidence` based on how clearly the decision follows from the available feedback:
+- "high": A closely matching feedback entry (80%+ similarity) exists, with a consistent and unambiguous decision.
+- "medium": Similar feedback exists but with some ambiguity (e.g., partial match, conflicting entries resolved by recency).
+- "low": No similar feedback found, or the decision is largely a guess.
+Only return `needs_notification = false` with `confidence = "high"`. If confidence is "medium" or "low", always set `needs_notification = true`.
+</confidence_criteria>

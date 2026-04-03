@@ -2,6 +2,29 @@ use crate::domain::value_objects::{FeedbackId, Timestamp};
 use serde::{Deserialize, Serialize};
 use typed_builder::TypedBuilder;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationDecision {
+    needs_notification: bool,
+    #[serde(default)]
+    confidence: Option<String>,
+    #[serde(default)]
+    matched_feedback_reason: Option<String>,
+}
+
+impl NotificationDecision {
+    pub fn needs_notification(&self) -> bool {
+        self.needs_notification
+    }
+
+    pub fn confidence(&self) -> Option<&str> {
+        self.confidence.as_deref()
+    }
+
+    pub fn matched_feedback_reason(&self) -> Option<&str> {
+        self.matched_feedback_reason.as_deref()
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, TypedBuilder)]
 pub(crate) struct Feedback {
     id: FeedbackId,

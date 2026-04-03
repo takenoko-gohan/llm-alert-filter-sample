@@ -31,11 +31,27 @@ impl NotificationService {
             for log_event in log_events {
                 let message = log_event.message;
 
-                if self
+                let decision = self
                     .bedrock_client
                     .needs_notification(&feedback, &message, &now_rfc3339())
-                    .await?
-                {
+                    .await?;
+
+                let confidence = decision.confidence().unwrap_or("unknown");
+                let reason = decision.matched_feedback_reason().unwrap_or("");
+
+                let should_notify = if !decision.needs_notification() && confidence != "high" {
+                    tracing::warn!(
+                        log_group = %log_group,
+                        confidence = %confidence,
+                        reason = %reason,
+                        "Non-high confidence suppression overridden to notify (fail-safe)"
+                    );
+                    true
+                } else {
+                    decision.needs_notification()
+                };
+
+                if should_notify {
                     self.slack_client
                         .post_alert(&self.slack_channel_id, &log_group, &message)
                         .await?;

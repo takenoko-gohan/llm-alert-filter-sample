@@ -1,13 +1,11 @@
-use crate::domain::entities::Feedback;
-use aws_sdk_bedrockruntime::operation::converse::ConverseOutput;
+use crate::domain::entities::{Feedback, NotificationDecision};
 use aws_sdk_bedrockruntime::types::{
-    ContentBlock, ConversationRole, InferenceConfiguration, Message, SystemContentBlock, Tool,
-    ToolConfiguration, ToolInputSchema, ToolSpecification,
+    ContentBlock, ConversationRole, InferenceConfiguration, JsonSchemaDefinition, Message,
+    OutputConfig, OutputFormat, OutputFormatStructure, OutputFormatType, SystemContentBlock,
 };
-use aws_smithy_types::Document;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use std::collections::HashMap;
+use serde_json::json;
 use std::fmt;
 use typed_builder::TypedBuilder;
 
@@ -97,7 +95,7 @@ impl Client {
         feedback: &[Feedback],
         message: &str,
         timestamp: &str,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+    ) -> Result<NotificationDecision, Box<dyn std::error::Error>> {
         let msg = Message::builder()
             .role(ConversationRole::User)
             .content(ContentBlock::Text(format!(
@@ -117,15 +115,20 @@ impl Client {
             .build()?;
 
         let inference_config = InferenceConfiguration::builder().top_p(self.top_p).build();
-        let tool_config = ToolConfiguration::builder()
-            .tools(Tool::ToolSpec(
-                ToolSpecification::builder()
-                    .name("judge_needs_notification")
-                    .description("Determines if notification is required.")
-                    .input_schema(ToolInputSchema::Json(self.make_tool_schema()))
+        let output_config = OutputConfig::builder()
+            .text_format(
+                OutputFormat::builder()
+                    .r#type(OutputFormatType::JsonSchema)
+                    .structure(OutputFormatStructure::JsonSchema(
+                        JsonSchemaDefinition::builder()
+                            .schema(self.make_json_schema())
+                            .name("notification_decision")
+                            .description("Decision on whether a notification should be sent.")
+                            .build()?,
+                    ))
                     .build()?,
-            ))
-            .build()?;
+            )
+            .build();
 
         let resp = self
             .inner_client
@@ -134,70 +137,52 @@ impl Client {
             .system(SystemContentBlock::Text(self.system_prompt().to_string()))
             .messages(msg)
             .inference_config(inference_config)
-            .tool_config(tool_config)
+            .output_config(output_config)
             .send()
             .await?;
 
-        self.get_converse_output(resp)
+        self.parse_response(resp)
     }
 
-    fn make_tool_schema(&self) -> Document {
-        Document::Object(HashMap::<String, Document>::from([
-            ("type".into(), Document::String("object".into())),
-            (
-                "properties".into(),
-                Document::Object(HashMap::<String, Document>::from([
-                    (
-                        "needs_notification".into(),
-                        Document::Object(HashMap::<String, Document>::from([
-                            ("type".into(), Document::String("boolean".into())),
-                            (
-                                "description".into(),
-                                Document::String("If notification is necessary, set to true, otherwise set to false.".into()),
-                            ),
-                        ])),
-                    ),
-                ])),
-            ),
-            (
-                "required".into(),
-                Document::Array(vec![
-                    Document::String("needs_notification".into()),
-                ]),
-            ),
-        ]))
-    }
-
-    fn get_converse_output(
-        &self,
-        resp: ConverseOutput,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
-        let output = resp.output.ok_or("Output not found")?;
-
-        let mut needs_notification = None;
-        for content in output
-            .as_message()
-            .map_err(|_| "Output is not a message")?
-            .content()
-        {
-            match content.as_tool_use() {
-                Ok(tool_use) => {
-                    let result = tool_use
-                        .input()
-                        .as_object()
-                        .ok_or("Input is not an object")?
-                        .get("needs_notification")
-                        .ok_or("needs_notification not found")?
-                        .as_bool()
-                        .ok_or("needs_notification is not a boolean")?;
-
-                    needs_notification = Some(result);
+    fn make_json_schema(&self) -> String {
+        json!({
+            "type": "object",
+            "properties": {
+                "needs_notification": {
+                    "type": "boolean",
+                    "description": "If notification is necessary, set to true, otherwise set to false."
+                },
+                "confidence": {
+                    "type": "string",
+                    "description": "Confidence level of the decision.",
+                    "enum": ["high", "medium", "low"]
+                },
+                "matched_feedback_reason": {
+                    "type": "string",
+                    "description": "Explanation of which feedback was matched and why this decision was made."
                 }
-                Err(_) => continue,
+            },
+            "required": ["needs_notification", "confidence", "matched_feedback_reason"],
+            "additionalProperties": false
+        })
+        .to_string()
+    }
+
+    fn parse_response(
+        &self,
+        resp: aws_sdk_bedrockruntime::operation::converse::ConverseOutput,
+    ) -> Result<NotificationDecision, Box<dyn std::error::Error>> {
+        let output = resp.output.ok_or("Output not found")?;
+        let message = output.as_message().map_err(|_| "Output is not a message")?;
+
+        for content in message.content() {
+            if let ContentBlock::Text(text) = content {
+                let decision: NotificationDecision = serde_json::from_str(text)?;
+                return Ok(decision);
             }
         }
 
-        Ok(needs_notification.ok_or("Failed not found toolUse")?)
+        Err("No text block found in response".into())
     }
 
     fn system_prompt(&self) -> &str {
