@@ -1,16 +1,21 @@
 use crate::domain::entities::{Confidence, Feedback, NotificationDecision};
 use aws_sdk_bedrockruntime::types::{
     ContentBlock, ConversationRole, InferenceConfiguration, JsonSchemaDefinition, Message,
-    OutputConfig, OutputFormat, OutputFormatStructure, OutputFormatType, SystemContentBlock,
+    OutputConfig, OutputFormat, OutputFormatStructure, OutputFormatType, SystemContentBlock, Tool,
+    ToolChoice, ToolConfiguration, ToolInputSchema, ToolSpecification,
 };
+use aws_smithy_types::Document;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::json;
+use std::collections::HashMap;
 use std::fmt;
 use typed_builder::TypedBuilder;
 
 const SYSTEM_PROMPT_EN: &str = include_str!("prompts/system_prompt_en.txt");
 const SYSTEM_PROMPT_JA: &str = include_str!("prompts/system_prompt_ja.txt");
+
+const TOOL_NAME: &str = "judge_needs_notification";
 
 #[derive(Debug, Clone, Default)]
 pub enum PromptLanguage {
@@ -115,6 +120,29 @@ impl Client {
             .build()?;
 
         let inference_config = InferenceConfiguration::builder().top_p(self.top_p).build();
+
+        let resp = if self.supports_structured_output() {
+            self.converse_with_structured_output(msg, inference_config)
+                .await?
+        } else {
+            self.converse_with_tool_use(msg, inference_config).await?
+        };
+
+        self.parse_response(resp)
+    }
+
+    fn supports_structured_output(&self) -> bool {
+        !self.model_id.contains("amazon.nova")
+    }
+
+    async fn converse_with_structured_output(
+        &self,
+        msg: Message,
+        inference_config: InferenceConfiguration,
+    ) -> Result<
+        aws_sdk_bedrockruntime::operation::converse::ConverseOutput,
+        Box<dyn std::error::Error>,
+    > {
         let output_config = OutputConfig::builder()
             .text_format(
                 OutputFormat::builder()
@@ -130,7 +158,7 @@ impl Client {
             )
             .build();
 
-        let resp = self
+        Ok(self
             .inner_client
             .converse()
             .model_id(&self.model_id)
@@ -139,9 +167,42 @@ impl Client {
             .inference_config(inference_config)
             .output_config(output_config)
             .send()
-            .await?;
+            .await?)
+    }
 
-        self.parse_response(resp)
+    async fn converse_with_tool_use(
+        &self,
+        msg: Message,
+        inference_config: InferenceConfiguration,
+    ) -> Result<
+        aws_sdk_bedrockruntime::operation::converse::ConverseOutput,
+        Box<dyn std::error::Error>,
+    > {
+        let tool_config = ToolConfiguration::builder()
+            .tools(Tool::ToolSpec(
+                ToolSpecification::builder()
+                    .name(TOOL_NAME)
+                    .description("Determines if notification is required.")
+                    .input_schema(ToolInputSchema::Json(self.make_tool_schema()))
+                    .build()?,
+            ))
+            .tool_choice(ToolChoice::Tool(
+                aws_sdk_bedrockruntime::types::SpecificToolChoice::builder()
+                    .name(TOOL_NAME)
+                    .build()?,
+            ))
+            .build()?;
+
+        Ok(self
+            .inner_client
+            .converse()
+            .model_id(&self.model_id)
+            .system(SystemContentBlock::Text(self.system_prompt().to_string()))
+            .messages(msg)
+            .inference_config(inference_config)
+            .tool_config(tool_config)
+            .send()
+            .await?)
     }
 
     fn make_json_schema(&self) -> String {
@@ -172,6 +233,67 @@ impl Client {
         .to_string()
     }
 
+    fn make_tool_schema(&self) -> Document {
+        Document::Object(HashMap::from([
+            ("type".into(), Document::String("object".into())),
+            (
+                "properties".into(),
+                Document::Object(HashMap::from([
+                    (
+                        "needs_notification".into(),
+                        Document::Object(HashMap::from([
+                            ("type".into(), Document::String("boolean".into())),
+                            (
+                                "description".into(),
+                                Document::String(
+                                    "If notification is necessary, set to true, otherwise set to false.".into(),
+                                ),
+                            ),
+                        ])),
+                    ),
+                    (
+                        "confidence".into(),
+                        Document::Object(HashMap::from([
+                            ("type".into(), Document::String("string".into())),
+                            (
+                                "description".into(),
+                                Document::String("Confidence level of the decision.".into()),
+                            ),
+                            (
+                                "enum".into(),
+                                Document::Array(vec![
+                                    Document::String(Confidence::High.to_string()),
+                                    Document::String(Confidence::Medium.to_string()),
+                                    Document::String(Confidence::Low.to_string()),
+                                ]),
+                            ),
+                        ])),
+                    ),
+                    (
+                        "matched_feedback_reason".into(),
+                        Document::Object(HashMap::from([
+                            ("type".into(), Document::String("string".into())),
+                            (
+                                "description".into(),
+                                Document::String(
+                                    "Explanation of which feedback was matched and why this decision was made.".into(),
+                                ),
+                            ),
+                        ])),
+                    ),
+                ])),
+            ),
+            (
+                "required".into(),
+                Document::Array(vec![
+                    Document::String("needs_notification".into()),
+                    Document::String("confidence".into()),
+                    Document::String("matched_feedback_reason".into()),
+                ]),
+            ),
+        ]))
+    }
+
     fn parse_response(
         &self,
         resp: aws_sdk_bedrockruntime::operation::converse::ConverseOutput,
@@ -179,14 +301,56 @@ impl Client {
         let output = resp.output.ok_or("Output not found")?;
         let message = output.as_message().map_err(|_| "Output is not a message")?;
 
+        // ToolUse ブロックを優先的に探す（Nova は ToolUse の前後に Text を返すことがある）
+        let mut tool_use_decision = None;
+        let mut text_decision = None;
+
         for content in message.content() {
-            if let ContentBlock::Text(text) = content {
-                let decision: NotificationDecision = serde_json::from_str(text)?;
-                return Ok(decision);
+            match content {
+                ContentBlock::ToolUse(tool_use) => {
+                    let input = tool_use
+                        .input()
+                        .as_object()
+                        .ok_or("Input is not an object")?;
+
+                    let needs_notification = input
+                        .get("needs_notification")
+                        .ok_or("needs_notification not found")?
+                        .as_bool()
+                        .ok_or("needs_notification is not a boolean")?;
+
+                    let confidence = input
+                        .get("confidence")
+                        .and_then(|v| v.as_string())
+                        .and_then(|s| {
+                            serde_json::from_value(serde_json::Value::String(s.to_string())).ok()
+                        });
+
+                    let matched_feedback_reason = input
+                        .get("matched_feedback_reason")
+                        .and_then(|v| v.as_string())
+                        .map(|s| s.to_string());
+
+                    tool_use_decision = Some(
+                        NotificationDecision::builder()
+                            .needs_notification(needs_notification)
+                            .confidence(confidence)
+                            .matched_feedback_reason(matched_feedback_reason)
+                            .build(),
+                    );
+                }
+                ContentBlock::Text(text) => {
+                    if let Ok(decision) = serde_json::from_str::<NotificationDecision>(text) {
+                        text_decision = Some(decision);
+                    }
+                }
+                _ => continue,
             }
         }
 
-        Err("No text block found in response".into())
+        tool_use_decision
+            .or(text_decision)
+            .ok_or_else(|| "No valid tool use or JSON text block found in response".into())
     }
 
     fn system_prompt(&self) -> &str {

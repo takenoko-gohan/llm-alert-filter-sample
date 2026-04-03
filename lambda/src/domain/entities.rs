@@ -35,12 +35,14 @@ impl fmt::Display for Confidence {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TypedBuilder)]
 pub struct NotificationDecision {
     needs_notification: bool,
     #[serde(default)]
+    #[builder(default)]
     confidence: Option<Confidence>,
     #[serde(default)]
+    #[builder(default)]
     matched_feedback_reason: Option<String>,
 }
 
