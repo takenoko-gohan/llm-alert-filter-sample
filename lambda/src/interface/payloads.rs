@@ -103,6 +103,7 @@ pub(crate) enum BlockId {
     LogGroup,
     Message,
     Divider,
+    Confidence,
     FeedbackButton,
 }
 

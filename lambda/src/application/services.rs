@@ -36,24 +36,26 @@ impl NotificationService {
                     .needs_notification(&feedback, &message, &now_rfc3339())
                     .await?;
 
-                let confidence = decision.confidence().unwrap_or("unknown");
+                let confidence = decision.confidence();
                 let reason = decision.matched_feedback_reason().unwrap_or("");
 
-                let should_notify = if !decision.needs_notification() && confidence != "high" {
-                    tracing::warn!(
-                        log_group = %log_group,
-                        confidence = %confidence,
-                        reason = %reason,
-                        "Non-high confidence suppression overridden to notify (fail-safe)"
-                    );
-                    true
-                } else {
-                    decision.needs_notification()
-                };
+                let is_high_confidence = confidence.is_some_and(|c| c.is_high());
+                let should_notify =
+                    if !decision.needs_notification() && !is_high_confidence {
+                        tracing::warn!(
+                            log_group = %log_group,
+                            confidence = ?confidence,
+                            reason = %reason,
+                            "Non-high confidence suppression overridden to notify (fail-safe)"
+                        );
+                        true
+                    } else {
+                        decision.needs_notification()
+                    };
 
                 if should_notify {
                     self.slack_client
-                        .post_alert(&self.slack_channel_id, &log_group, &message)
+                        .post_alert(&self.slack_channel_id, &log_group, &message, confidence)
                         .await?;
                 }
             }

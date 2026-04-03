@@ -1,12 +1,45 @@
 use crate::domain::value_objects::{FeedbackId, Timestamp};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use typed_builder::TypedBuilder;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Confidence {
+    High,
+    Medium,
+    Low,
+}
+
+impl Confidence {
+    pub fn is_high(&self) -> bool {
+        matches!(self, Confidence::High)
+    }
+
+    pub fn emoji(&self) -> &'static str {
+        match self {
+            Confidence::High => ":large_green_circle:",
+            Confidence::Medium => ":large_yellow_circle:",
+            Confidence::Low => ":red_circle:",
+        }
+    }
+}
+
+impl fmt::Display for Confidence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Confidence::High => write!(f, "high"),
+            Confidence::Medium => write!(f, "medium"),
+            Confidence::Low => write!(f, "low"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationDecision {
     needs_notification: bool,
     #[serde(default)]
-    confidence: Option<String>,
+    confidence: Option<Confidence>,
     #[serde(default)]
     matched_feedback_reason: Option<String>,
 }
@@ -16,8 +49,8 @@ impl NotificationDecision {
         self.needs_notification
     }
 
-    pub fn confidence(&self) -> Option<&str> {
-        self.confidence.as_deref()
+    pub fn confidence(&self) -> Option<&Confidence> {
+        self.confidence.as_ref()
     }
 
     pub fn matched_feedback_reason(&self) -> Option<&str> {

@@ -1,4 +1,4 @@
-use crate::domain::entities::{Feedback, NotificationDecision};
+use crate::domain::entities::{Confidence, Feedback, NotificationDecision};
 use aws_sdk_bedrockruntime::types::{
     ContentBlock, ConversationRole, InferenceConfiguration, JsonSchemaDefinition, Message,
     OutputConfig, OutputFormat, OutputFormatStructure, OutputFormatType, SystemContentBlock,
@@ -155,7 +155,11 @@ impl Client {
                 "confidence": {
                     "type": "string",
                     "description": "Confidence level of the decision.",
-                    "enum": ["high", "medium", "low"]
+                    "enum": [
+                        Confidence::High.to_string(),
+                        Confidence::Medium.to_string(),
+                        Confidence::Low.to_string(),
+                    ]
                 },
                 "matched_feedback_reason": {
                     "type": "string",

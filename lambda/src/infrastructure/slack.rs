@@ -1,3 +1,4 @@
+use crate::domain::entities::Confidence;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use flate2::write::GzEncoder;
@@ -73,13 +74,29 @@ impl Client {
         channel_id: &str,
         log_group: &str,
         message: &str,
+        confidence: Option<&Confidence>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let url = format!("{}/chat.postMessage", BASE_URL);
+
+        let (confidence_emoji, confidence_label) = match confidence {
+            Some(c) => (c.emoji(), c.to_string()),
+            None => (":white_circle:", "unknown".to_string()),
+        };
 
         let mut blocks = match self.make_base_alert_message(log_group, message).as_array() {
             Some(blocks) => blocks.to_vec(),
             None => vec![],
         };
+        blocks.push(serde_json::json!({
+            "type": "context",
+            "block_id": "confidence",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": format!("{} Confidence: *{}*", confidence_emoji, confidence_label)
+                }
+            ]
+        }));
         blocks.push(serde_json::json!({
             "type": "actions",
             "block_id": "feedback_button",
