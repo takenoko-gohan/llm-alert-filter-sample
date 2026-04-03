@@ -1,11 +1,12 @@
 use aws_config::BehaviorVersion;
 use lambda::application::services::NotificationService;
+use lambda::domain::errors::AppError;
 use lambda::infrastructure::repositories_impl::FeedbackRepositoryImpl;
 use lambda::infrastructure::{bedrock, secrets, slack};
-use lambda_runtime::{run, service_fn, tracing, Error};
+use lambda_runtime::{run, service_fn, tracing};
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), lambda_runtime::Error> {
     tracing::init_default_subscriber();
 
     let table_name = std::env::var("TABLE_NAME").expect("TABLE_NAME is not set");
@@ -52,5 +53,10 @@ async fn main() -> Result<(), Error> {
         .slack_channel_id(slack_channel_id)
         .build();
 
-    run(service_fn(|event| srv.slack_notification(event))).await
+    run(service_fn(|event| async {
+        srv.slack_notification(event)
+            .await
+            .map_err(|e: AppError| -> lambda_runtime::Diagnostic { e.into() })
+    }))
+    .await
 }

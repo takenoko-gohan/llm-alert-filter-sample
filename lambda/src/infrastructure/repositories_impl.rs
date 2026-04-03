@@ -1,9 +1,9 @@
 use crate::domain::entities::Feedback;
+use crate::domain::errors::DynamoDbError;
 use crate::domain::repositories::FeedbackRepository;
 use aws_sdk_dynamodb::types::AttributeValue;
 use aws_sdk_dynamodb::Client;
 use serde_dynamo::{from_items, to_item};
-use std::error::Error;
 use typed_builder::TypedBuilder;
 
 #[derive(Clone, TypedBuilder)]
@@ -13,15 +13,16 @@ pub struct FeedbackRepositoryImpl {
 }
 
 impl FeedbackRepository for FeedbackRepositoryImpl {
-    async fn add_feedback(&self, feedback: Feedback) -> Result<(), Box<dyn Error>> {
-        let item = to_item(feedback)?;
+    async fn add_feedback(&self, feedback: Feedback) -> Result<(), DynamoDbError> {
+        let item = to_item(feedback).map_err(|e| DynamoDbError::Put(e.into()))?;
 
         self.client
             .put_item()
             .table_name(&self.table_name)
             .set_item(Some(item))
             .send()
-            .await?;
+            .await
+            .map_err(|e| DynamoDbError::Put(e.into()))?;
 
         Ok(())
     }
@@ -29,7 +30,7 @@ impl FeedbackRepository for FeedbackRepositoryImpl {
     async fn list_feedback_by_log_group(
         &self,
         log_group: &str,
-    ) -> Result<Vec<Feedback>, Box<dyn Error>> {
+    ) -> Result<Vec<Feedback>, DynamoDbError> {
         let mut results = vec![];
         let mut exclusive_start_key = None;
 
@@ -43,10 +44,15 @@ impl FeedbackRepository for FeedbackRepositoryImpl {
                 .expression_attribute_values(":log_group", AttributeValue::S(log_group.to_string()))
                 .set_exclusive_start_key(exclusive_start_key)
                 .send()
-                .await?;
+                .await
+                .map_err(|e| DynamoDbError::Query {
+                    log_group: log_group.to_string(),
+                    source: e.into(),
+                })?;
 
             if let Some(items) = resp.items {
-                let feedback: Vec<Feedback> = from_items(items)?;
+                let feedback: Vec<Feedback> =
+                    from_items(items).map_err(|e| DynamoDbError::Deserialize(e.to_string()))?;
                 results.extend(feedback);
 
                 match &resp.last_evaluated_key {

@@ -1,4 +1,5 @@
 use crate::domain::entities::{Confidence, Feedback, NotificationDecision};
+use crate::domain::errors::BedrockError;
 use aws_sdk_bedrockruntime::types::{
     ContentBlock, ConversationRole, InferenceConfiguration, JsonSchemaDefinition, Message,
     OutputConfig, OutputFormat, OutputFormatStructure, OutputFormatType, SystemContentBlock, Tool,
@@ -100,24 +101,39 @@ impl Client {
         feedback: &[Feedback],
         message: &str,
         timestamp: &str,
-    ) -> Result<NotificationDecision, Box<dyn std::error::Error>> {
+    ) -> Result<NotificationDecision, BedrockError> {
         let msg = Message::builder()
             .role(ConversationRole::User)
             .content(ContentBlock::Text(format!(
                 "<feedback>{}</feedback><target_log>{}</target_log>",
-                serde_json::to_string(&feedback.iter().map(|v| v.try_into()).collect::<Result<
-                    Vec<FeedbackDto>,
-                    _,
-                >>(
-                )?)?,
+                serde_json::to_string(
+                    &feedback
+                        .iter()
+                        .map(|v| v.try_into())
+                        .collect::<Result<Vec<FeedbackDto>, _>>()
+                        .map_err(|e: Box<dyn std::error::Error>| {
+                            BedrockError::RequestBuild {
+                                detail: e.to_string(),
+                            }
+                        })?,
+                )
+                .map_err(|e| BedrockError::RequestBuild {
+                    detail: e.to_string(),
+                })?,
                 serde_json::to_string(
                     &TargetLog::builder()
                         .message(message.to_string())
                         .timestamp(timestamp.to_string())
                         .build()
-                )?
+                )
+                .map_err(|e| BedrockError::RequestBuild {
+                    detail: e.to_string(),
+                })?
             )))
-            .build()?;
+            .build()
+            .map_err(|e| BedrockError::RequestBuild {
+                detail: e.to_string(),
+            })?;
 
         let inference_config = InferenceConfiguration::builder().top_p(self.top_p).build();
 
@@ -139,10 +155,7 @@ impl Client {
         &self,
         msg: Message,
         inference_config: InferenceConfiguration,
-    ) -> Result<
-        aws_sdk_bedrockruntime::operation::converse::ConverseOutput,
-        Box<dyn std::error::Error>,
-    > {
+    ) -> Result<aws_sdk_bedrockruntime::operation::converse::ConverseOutput, BedrockError> {
         let output_config = OutputConfig::builder()
             .text_format(
                 OutputFormat::builder()
@@ -152,14 +165,19 @@ impl Client {
                             .schema(self.make_json_schema())
                             .name("notification_decision")
                             .description("Decision on whether a notification should be sent.")
-                            .build()?,
+                            .build()
+                            .map_err(|e| BedrockError::RequestBuild {
+                                detail: e.to_string(),
+                            })?,
                     ))
-                    .build()?,
+                    .build()
+                    .map_err(|e| BedrockError::RequestBuild {
+                        detail: e.to_string(),
+                    })?,
             )
             .build();
 
-        Ok(self
-            .inner_client
+        self.inner_client
             .converse()
             .model_id(&self.model_id)
             .system(SystemContentBlock::Text(self.system_prompt().to_string()))
@@ -167,34 +185,42 @@ impl Client {
             .inference_config(inference_config)
             .output_config(output_config)
             .send()
-            .await?)
+            .await
+            .map_err(|e| BedrockError::ConverseFailed {
+                source: Box::new(e),
+            })
     }
 
     async fn converse_with_tool_use(
         &self,
         msg: Message,
         inference_config: InferenceConfiguration,
-    ) -> Result<
-        aws_sdk_bedrockruntime::operation::converse::ConverseOutput,
-        Box<dyn std::error::Error>,
-    > {
+    ) -> Result<aws_sdk_bedrockruntime::operation::converse::ConverseOutput, BedrockError> {
         let tool_config = ToolConfiguration::builder()
             .tools(Tool::ToolSpec(
                 ToolSpecification::builder()
                     .name(TOOL_NAME)
                     .description("Determines if notification is required.")
                     .input_schema(ToolInputSchema::Json(self.make_tool_schema()))
-                    .build()?,
+                    .build()
+                    .map_err(|e| BedrockError::RequestBuild {
+                        detail: e.to_string(),
+                    })?,
             ))
             .tool_choice(ToolChoice::Tool(
                 aws_sdk_bedrockruntime::types::SpecificToolChoice::builder()
                     .name(TOOL_NAME)
-                    .build()?,
+                    .build()
+                    .map_err(|e| BedrockError::RequestBuild {
+                        detail: e.to_string(),
+                    })?,
             ))
-            .build()?;
+            .build()
+            .map_err(|e| BedrockError::RequestBuild {
+                detail: e.to_string(),
+            })?;
 
-        Ok(self
-            .inner_client
+        self.inner_client
             .converse()
             .model_id(&self.model_id)
             .system(SystemContentBlock::Text(self.system_prompt().to_string()))
@@ -202,7 +228,10 @@ impl Client {
             .inference_config(inference_config)
             .tool_config(tool_config)
             .send()
-            .await?)
+            .await
+            .map_err(|e| BedrockError::ConverseFailed {
+                source: Box::new(e),
+            })
     }
 
     fn make_json_schema(&self) -> String {
@@ -297,9 +326,11 @@ impl Client {
     fn parse_response(
         &self,
         resp: aws_sdk_bedrockruntime::operation::converse::ConverseOutput,
-    ) -> Result<NotificationDecision, Box<dyn std::error::Error>> {
-        let output = resp.output.ok_or("Output not found")?;
-        let message = output.as_message().map_err(|_| "Output is not a message")?;
+    ) -> Result<NotificationDecision, BedrockError> {
+        let output = resp.output.ok_or(BedrockError::NoValidBlock)?;
+        let message = output
+            .as_message()
+            .map_err(|_| BedrockError::NoValidBlock)?;
 
         // ToolUse ブロックを優先的に探す（Nova は ToolUse の前後に Text を返すことがある）
         let mut tool_use_decision = None;
@@ -308,16 +339,23 @@ impl Client {
         for content in message.content() {
             match content {
                 ContentBlock::ToolUse(tool_use) => {
-                    let input = tool_use
-                        .input()
-                        .as_object()
-                        .ok_or("Input is not an object")?;
+                    let input =
+                        tool_use
+                            .input()
+                            .as_object()
+                            .ok_or(BedrockError::ResponseParse {
+                                detail: "Input is not an object".into(),
+                            })?;
 
                     let needs_notification = input
                         .get("needs_notification")
-                        .ok_or("needs_notification not found")?
+                        .ok_or(BedrockError::ResponseParse {
+                            detail: "needs_notification not found".into(),
+                        })?
                         .as_bool()
-                        .ok_or("needs_notification is not a boolean")?;
+                        .ok_or(BedrockError::ResponseParse {
+                            detail: "needs_notification is not a boolean".into(),
+                        })?;
 
                     let confidence = input
                         .get("confidence")
@@ -350,7 +388,7 @@ impl Client {
 
         tool_use_decision
             .or(text_decision)
-            .ok_or_else(|| "No valid tool use or JSON text block found in response".into())
+            .ok_or(BedrockError::NoValidBlock)
     }
 
     fn system_prompt(&self) -> &str {

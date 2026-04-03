@@ -1,4 +1,5 @@
 use crate::domain::entities::Confidence;
+use crate::domain::errors::SlackError;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use flate2::write::GzEncoder;
@@ -75,7 +76,7 @@ impl Client {
         log_group: &str,
         message: &str,
         confidence: Option<&Confidence>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), SlackError> {
         let url = format!("{}/chat.postMessage", BASE_URL);
 
         let (confidence_emoji, confidence_label) = match confidence {
@@ -130,14 +131,16 @@ impl Client {
             if resp.ok {
                 Ok(())
             } else {
-                Err(format!(
-                    "Failed to post message: {}",
-                    resp.error.unwrap_or("Unknown".into())
-                )
-                .into())
+                Err(SlackError::PostFailed {
+                    channel: channel_id.to_string(),
+                    detail: resp.error.unwrap_or("Unknown".into()),
+                })
             }
         } else {
-            Err(format!("Failed to post message: {}", resp.text().await?).into())
+            Err(SlackError::PostFailed {
+                channel: channel_id.to_string(),
+                detail: resp.text().await.unwrap_or_default(),
+            })
         }
     }
 
@@ -147,7 +150,7 @@ impl Client {
         ts: &str,
         log_group: &str,
         message: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), SlackError> {
         let url = format!("{}/chat.update", BASE_URL);
 
         let mut blocks = match self.make_base_alert_message(log_group, message).as_array() {
@@ -179,14 +182,14 @@ impl Client {
             if resp.ok {
                 Ok(())
             } else {
-                Err(format!(
-                    "Failed to close feedback button: {}",
-                    resp.error.unwrap_or("Unknown".into())
-                )
-                .into())
+                Err(SlackError::UpdateFailed {
+                    detail: resp.error.unwrap_or("Unknown".into()),
+                })
             }
         } else {
-            Err(format!("Failed to close feedback button: {}", resp.text().await?).into())
+            Err(SlackError::UpdateFailed {
+                detail: resp.text().await.unwrap_or_default(),
+            })
         }
     }
 
@@ -244,7 +247,7 @@ impl Client {
         &self,
         trigger_id: &str,
         private_metadata: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), SlackError> {
         let url = format!("{}/views.open", BASE_URL);
 
         let view = make_feedback_view(private_metadata);
@@ -265,17 +268,20 @@ impl Client {
             if resp.ok {
                 Ok(())
             } else {
-                Err(format!(
-                    "Failed to open modal: {{ error: \"{}\", response_metadata: \"{}\" }}",
-                    resp.error.unwrap_or_default(),
-                    resp.response_metadata
-                        .map(|v| serde_json::to_string(&v).unwrap_or_default())
-                        .unwrap_or_else(|| "(no metadata)".to_string()),
-                )
-                .into())
+                Err(SlackError::ModalFailed {
+                    detail: format!(
+                        "error: \"{}\", response_metadata: \"{}\"",
+                        resp.error.unwrap_or_default(),
+                        resp.response_metadata
+                            .map(|v| serde_json::to_string(&v).unwrap_or_default())
+                            .unwrap_or_else(|| "(no metadata)".to_string()),
+                    ),
+                })
             }
         } else {
-            Err(format!("Failed to open modal: {}", resp.text().await?).into())
+            Err(SlackError::ModalFailed {
+                detail: resp.text().await.unwrap_or_default(),
+            })
         }
     }
 }

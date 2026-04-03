@@ -1,4 +1,5 @@
 use crate::domain::entities::Feedback;
+use crate::domain::errors::AppError;
 use crate::domain::repositories::FeedbackRepository;
 use crate::domain::value_objects::{FeedbackId, Timestamp};
 use crate::infrastructure::repositories_impl::FeedbackRepositoryImpl;
@@ -18,10 +19,7 @@ pub struct NotificationService {
 }
 
 impl NotificationService {
-    pub async fn slack_notification(
-        &self,
-        event: LambdaEvent<LogsEvent>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn slack_notification(&self, event: LambdaEvent<LogsEvent>) -> Result<(), AppError> {
         let payload = event.payload;
         let log_events = payload.aws_logs.data.log_events;
         let log_group = payload.aws_logs.data.log_group;
@@ -77,8 +75,13 @@ impl CollectionService {
         private_metadata: &str,
         needs_notification: bool,
         reason: Option<String>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let private_metadata = PrivateMetadata::try_from(private_metadata)?;
+    ) -> Result<(), AppError> {
+        use crate::domain::errors::SlackError;
+
+        let private_metadata =
+            PrivateMetadata::try_from(private_metadata).map_err(|e| SlackError::ModalFailed {
+                detail: e.to_string(),
+            })?;
 
         let feedback = Feedback::builder()
             .id(FeedbackId::new())
@@ -99,6 +102,7 @@ impl CollectionService {
                 private_metadata.message(),
             )
             .await
+            .map_err(AppError::from)
     }
 
     pub(crate) async fn open_modal(
@@ -107,15 +111,21 @@ impl CollectionService {
         ts: String,
         log_group: String,
         message: String,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), AppError> {
+        use crate::domain::errors::SlackError;
+
         let private_metadata = PrivateMetadata::builder()
             .ts(ts)
             .log_group(log_group)
             .message(message)
             .build()
-            .encode_base64()?;
+            .encode_base64()
+            .map_err(|e| SlackError::ModalFailed {
+                detail: e.to_string(),
+            })?;
         self.slack_client
             .open_modal(trigger_id, &private_metadata)
             .await
+            .map_err(AppError::from)
     }
 }
