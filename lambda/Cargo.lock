@@ -1456,6 +1456,7 @@ dependencies = [
  "hmac",
  "lambda_http",
  "lambda_runtime",
+ "rand",
  "reqwest",
  "serde",
  "serde_dynamo",

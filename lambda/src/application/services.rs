@@ -31,7 +31,7 @@ impl NotificationService {
 
                 let decision = self
                     .bedrock_client
-                    .needs_notification(&feedback, &message, &now_rfc3339())
+                    .needs_notification_with_retry(&feedback, &message, &now_rfc3339())
                     .await?;
 
                 let confidence = decision.confidence();

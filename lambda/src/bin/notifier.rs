@@ -14,11 +14,14 @@ async fn main() -> Result<(), lambda_runtime::Error> {
 
     let aws_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let dynamodb_client = aws_sdk_dynamodb::Client::new(&aws_config);
+
     let bedrock_client = bedrock::Client::builder()
         .inner_client(aws_sdk_bedrockruntime::Client::new(&aws_config))
         .model_id(app_config.model_id().to_string())
         .top_p(app_config.top_p())
         .prompt_language(app_config.prompt_language().clone())
+        .max_retries(app_config.max_retries())
+        .base_delay_ms(app_config.base_delay_ms())
         .build();
     let secrets_client = secrets::Client::builder()
         .inner(aws_sdk_secretsmanager::Client::new(&aws_config))

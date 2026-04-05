@@ -26,6 +26,20 @@ impl NotifierConfig {
             .parse()
             .map_err(|e: String| AppError::Config(e))?;
 
+        let max_retries: u32 = parse_env_or("MAX_RETRIES", 3)?;
+        if max_retries > 6 {
+            return Err(AppError::Config(format!(
+                "MAX_RETRIES must be 0..=6, got {max_retries}"
+            )));
+        }
+
+        let base_delay_ms: u64 = parse_env_or("BASE_DELAY_MS", 500)?;
+        if !(100..=10000).contains(&base_delay_ms) {
+            return Err(AppError::Config(format!(
+                "BASE_DELAY_MS must be 100..=10000, got {base_delay_ms}"
+            )));
+        }
+
         Ok(Self {
             table_name: require_env("TABLE_NAME")?,
             model_id: require_env("BEDROCK_MODEL_ID")?,
@@ -33,8 +47,8 @@ impl NotifierConfig {
             slack_channel_id: require_env("SLACK_CHANNEL_ID")?,
             secret_id: require_env("SECRET_ID")?,
             prompt_language,
-            max_retries: parse_env_or("MAX_RETRIES", 3)?,
-            base_delay_ms: parse_env_or("BASE_DELAY_MS", 500)?,
+            max_retries,
+            base_delay_ms,
         })
     }
 

@@ -10,7 +10,9 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
+use rand::Rng;
 use std::fmt;
+use tokio::time::{sleep, Duration};
 use typed_builder::TypedBuilder;
 
 const SYSTEM_PROMPT_EN: &str = include_str!("prompts/system_prompt_en.txt");
@@ -93,6 +95,10 @@ pub struct Client {
     top_p: f32,
     #[builder(default)]
     prompt_language: PromptLanguage,
+    #[builder(default = 3)]
+    max_retries: u32,
+    #[builder(default = 500)]
+    base_delay_ms: u64,
 }
 
 impl Client {
@@ -389,6 +395,57 @@ impl Client {
         tool_use_decision
             .or(text_decision)
             .ok_or(BedrockError::NoValidBlock)
+    }
+
+    pub(crate) async fn needs_notification_with_retry(
+        &self,
+        feedback: &[Feedback],
+        message: &str,
+        timestamp: &str,
+    ) -> Result<NotificationDecision, BedrockError> {
+        let mut last_err = None;
+
+        for attempt in 0..=self.max_retries {
+            match self.needs_notification(feedback, message, timestamp).await {
+                Ok(decision) => return Ok(decision),
+                Err(e) => {
+                    if !e.is_retryable() {
+                        return Err(e);
+                    }
+                    if attempt == self.max_retries {
+                        last_err = Some(e);
+                        break;
+                    }
+
+                    let base = self.base_delay_ms.saturating_mul(2u64.saturating_pow(attempt));
+                    let jitter = rand::rng().random_range(0..=1000u64);
+                    let delay = base + jitter;
+
+                    tracing::warn!(
+                        attempt = attempt + 1,
+                        max_retries = self.max_retries,
+                        delay_ms = delay,
+                        error = %e,
+                        "Bedrock API call failed, retrying"
+                    );
+
+                    sleep(Duration::from_millis(delay)).await;
+                }
+            }
+        }
+
+        // All retries exhausted — fail-safe: notify
+        let err = last_err.expect("last_err must be set when all retries exhausted");
+        tracing::error!(
+            error = %err,
+            "All Bedrock retries exhausted, falling back to fail-safe notification"
+        );
+
+        Ok(NotificationDecision::builder()
+            .needs_notification(true)
+            .confidence(Some(Confidence::Low))
+            .matched_feedback_reason(Some(format!("Fail-safe: Bedrock API error after retries: {err}")))
+            .build())
     }
 
     fn system_prompt(&self) -> &str {
