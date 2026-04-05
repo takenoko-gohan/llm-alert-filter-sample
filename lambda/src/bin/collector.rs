@@ -1,6 +1,6 @@
 use aws_config::BehaviorVersion;
 use axum::Router;
-use lambda::config::CollectorConfig;
+use lambda::application::config::CollectorConfig;
 use lambda::infrastructure::{secrets, slack};
 use lambda::interface::middleware::create_auth_layer;
 use lambda::interface::routers::create_feedback_router;

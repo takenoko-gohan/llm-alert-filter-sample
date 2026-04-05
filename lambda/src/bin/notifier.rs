@@ -1,6 +1,6 @@
 use aws_config::BehaviorVersion;
 use lambda::application::services::NotificationService;
-use lambda::config::NotifierConfig;
+use lambda::application::config::NotifierConfig;
 use lambda::domain::errors::AppError;
 use lambda::infrastructure::repositories_impl::FeedbackRepositoryImpl;
 use lambda::infrastructure::{bedrock, secrets, slack};
