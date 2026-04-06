@@ -3,6 +3,37 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use typed_builder::TypedBuilder;
 
+#[derive(Debug, Clone, Default)]
+pub enum Language {
+    #[default]
+    En,
+    Ja,
+}
+
+impl std::str::FromStr for Language {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "en" => Ok(Language::En),
+            "ja" => Ok(Language::Ja),
+            other => Err(format!(
+                "unsupported language: '{}' (expected 'en' or 'ja')",
+                other
+            )),
+        }
+    }
+}
+
+impl fmt::Display for Language {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Language::En => write!(f, "en"),
+            Language::Ja => write!(f, "ja"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Confidence {

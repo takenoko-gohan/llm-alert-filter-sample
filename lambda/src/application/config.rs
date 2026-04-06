@@ -1,5 +1,5 @@
+use crate::domain::entities::Language;
 use crate::domain::errors::AppError;
-use crate::infrastructure::bedrock::PromptLanguage;
 
 #[derive(Debug, Clone)]
 pub struct NotifierConfig {
@@ -8,7 +8,7 @@ pub struct NotifierConfig {
     top_p: f32,
     slack_channel_id: String,
     secret_id: String,
-    prompt_language: PromptLanguage,
+    language: Language,
     max_retries: u32,
     base_delay_ms: u64,
 }
@@ -22,7 +22,7 @@ impl NotifierConfig {
             )));
         }
 
-        let prompt_language: PromptLanguage = env_or("PROMPT_LANGUAGE", "en")
+        let language: Language = env_or("APP_LANGUAGE", "en")
             .parse()
             .map_err(|e: String| AppError::Config(e))?;
 
@@ -46,7 +46,7 @@ impl NotifierConfig {
             top_p,
             slack_channel_id: require_env("SLACK_CHANNEL_ID")?,
             secret_id: require_env("SECRET_ID")?,
-            prompt_language,
+            language,
             max_retries,
             base_delay_ms,
         })
@@ -72,8 +72,8 @@ impl NotifierConfig {
         &self.secret_id
     }
 
-    pub fn prompt_language(&self) -> &PromptLanguage {
-        &self.prompt_language
+    pub fn language(&self) -> &Language {
+        &self.language
     }
 
     pub fn max_retries(&self) -> u32 {

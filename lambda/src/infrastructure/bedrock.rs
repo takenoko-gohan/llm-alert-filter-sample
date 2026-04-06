@@ -1,4 +1,4 @@
-use crate::domain::entities::{Confidence, Feedback, NotificationDecision};
+use crate::domain::entities::{Confidence, Feedback, Language, NotificationDecision};
 use crate::domain::errors::BedrockError;
 use aws_sdk_bedrockruntime::types::{
     ContentBlock, ConversationRole, InferenceConfiguration, JsonSchemaDefinition, Message,
@@ -11,7 +11,6 @@ use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
 use rand::Rng;
-use std::fmt;
 use tokio::time::{sleep, Duration};
 use typed_builder::TypedBuilder;
 
@@ -20,43 +19,10 @@ const SYSTEM_PROMPT_JA: &str = include_str!("prompts/system_prompt_ja.txt");
 
 const TOOL_NAME: &str = "judge_needs_notification";
 
-#[derive(Debug, Clone, Default)]
-pub enum PromptLanguage {
-    #[default]
-    En,
-    Ja,
-}
-
-impl PromptLanguage {
-    fn system_prompt(&self) -> &str {
-        match self {
-            PromptLanguage::En => SYSTEM_PROMPT_EN,
-            PromptLanguage::Ja => SYSTEM_PROMPT_JA,
-        }
-    }
-}
-
-impl std::str::FromStr for PromptLanguage {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "en" => Ok(PromptLanguage::En),
-            "ja" => Ok(PromptLanguage::Ja),
-            other => Err(format!(
-                "unsupported PROMPT_LANGUAGE: '{}' (expected 'en' or 'ja')",
-                other
-            )),
-        }
-    }
-}
-
-impl fmt::Display for PromptLanguage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PromptLanguage::En => write!(f, "en"),
-            PromptLanguage::Ja => write!(f, "ja"),
-        }
+fn system_prompt(lang: &Language) -> &'static str {
+    match lang {
+        Language::En => SYSTEM_PROMPT_EN,
+        Language::Ja => SYSTEM_PROMPT_JA,
     }
 }
 
@@ -94,7 +60,7 @@ pub struct Client {
     model_id: String,
     top_p: f32,
     #[builder(default)]
-    prompt_language: PromptLanguage,
+    prompt_language: Language,
     #[builder(default = 3)]
     max_retries: u32,
     #[builder(default = 500)]
@@ -186,7 +152,7 @@ impl Client {
         self.inner_client
             .converse()
             .model_id(&self.model_id)
-            .system(SystemContentBlock::Text(self.system_prompt().to_string()))
+            .system(SystemContentBlock::Text(system_prompt(&self.prompt_language).to_string()))
             .messages(msg)
             .inference_config(inference_config)
             .output_config(output_config)
@@ -229,7 +195,7 @@ impl Client {
         self.inner_client
             .converse()
             .model_id(&self.model_id)
-            .system(SystemContentBlock::Text(self.system_prompt().to_string()))
+            .system(SystemContentBlock::Text(system_prompt(&self.prompt_language).to_string()))
             .messages(msg)
             .inference_config(inference_config)
             .tool_config(tool_config)
@@ -448,7 +414,4 @@ impl Client {
             .build())
     }
 
-    fn system_prompt(&self) -> &str {
-        self.prompt_language.system_prompt()
-    }
 }
