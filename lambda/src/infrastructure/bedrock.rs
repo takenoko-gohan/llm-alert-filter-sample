@@ -7,10 +7,10 @@ use aws_sdk_bedrockruntime::types::{
 };
 use aws_smithy_types::Document;
 use chrono::{DateTime, Utc};
+use rand::Rng;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
-use rand::Rng;
 use tokio::time::{sleep, Duration};
 use typed_builder::TypedBuilder;
 
@@ -152,7 +152,9 @@ impl Client {
         self.inner_client
             .converse()
             .model_id(&self.model_id)
-            .system(SystemContentBlock::Text(system_prompt(&self.prompt_language).to_string()))
+            .system(SystemContentBlock::Text(
+                system_prompt(&self.prompt_language).to_string(),
+            ))
             .messages(msg)
             .inference_config(inference_config)
             .output_config(output_config)
@@ -195,7 +197,9 @@ impl Client {
         self.inner_client
             .converse()
             .model_id(&self.model_id)
-            .system(SystemContentBlock::Text(system_prompt(&self.prompt_language).to_string()))
+            .system(SystemContentBlock::Text(
+                system_prompt(&self.prompt_language).to_string(),
+            ))
             .messages(msg)
             .inference_config(inference_config)
             .tool_config(tool_config)
@@ -383,7 +387,9 @@ impl Client {
                         break;
                     }
 
-                    let base = self.base_delay_ms.saturating_mul(2u64.saturating_pow(attempt));
+                    let base = self
+                        .base_delay_ms
+                        .saturating_mul(2u64.saturating_pow(attempt));
                     let jitter = rand::rng().random_range(0..=1000u64);
                     let delay = base + jitter;
 
@@ -410,8 +416,9 @@ impl Client {
         Ok(NotificationDecision::builder()
             .needs_notification(true)
             .confidence(Some(Confidence::Low))
-            .matched_feedback_reason(Some(format!("Fail-safe: Bedrock API error after retries: {err}")))
+            .matched_feedback_reason(Some(format!(
+                "Fail-safe: Bedrock API error after retries: {err}"
+            )))
             .build())
     }
-
 }

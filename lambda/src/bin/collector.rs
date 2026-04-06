@@ -1,6 +1,7 @@
 use aws_config::BehaviorVersion;
 use axum::Router;
 use lambda::application::config::CollectorConfig;
+use lambda::infrastructure::i18n::Messages;
 use lambda::infrastructure::{secrets, slack};
 use lambda::interface::middleware::create_auth_layer;
 use lambda::interface::routers::create_feedback_router;
@@ -25,6 +26,7 @@ async fn main() -> Result<(), Error> {
     let slack_client = slack::Client::builder()
         .inner_client(reqwest::Client::new())
         .token(slack_token)
+        .messages(Messages::from_language(app_config.language()))
         .build();
 
     let feedback = create_feedback_router(

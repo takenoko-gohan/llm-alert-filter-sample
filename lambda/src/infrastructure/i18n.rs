@@ -113,5 +113,4 @@ impl Messages {
     pub fn submit(&self) -> &str {
         &self.submit
     }
-
 }

@@ -90,14 +90,20 @@ pub struct CollectorConfig {
     table_name: String,
     secret_id: String,
     slack_channel_id: String,
+    language: Language,
 }
 
 impl CollectorConfig {
     pub fn from_env() -> Result<Self, AppError> {
+        let language: Language = env_or("APP_LANGUAGE", "en")
+            .parse()
+            .map_err(|e: String| AppError::Config(e))?;
+
         Ok(Self {
             table_name: require_env("TABLE_NAME")?,
             secret_id: require_env("SECRET_ID")?,
             slack_channel_id: require_env("SLACK_CHANNEL_ID")?,
+            language,
         })
     }
 
@@ -111,6 +117,10 @@ impl CollectorConfig {
 
     pub fn slack_channel_id(&self) -> &str {
         &self.slack_channel_id
+    }
+
+    pub fn language(&self) -> &Language {
+        &self.language
     }
 }
 

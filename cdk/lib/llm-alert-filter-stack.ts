@@ -177,6 +177,7 @@ export class LlmAlertFilterStack extends cdk.Stack {
 				TABLE_NAME: table.tableName,
 				SECRET_ID: collectorSecrets.secretName,
 				SLACK_CHANNEL_ID: slackChannelId.valueAsString,
+				APP_LANGUAGE: "en",
 			},
 			manifestPath: "../lambda/Cargo.toml",
 			binaryName: "collector",

@@ -1,7 +1,8 @@
 use aws_config::BehaviorVersion;
-use lambda::application::services::NotificationService;
 use lambda::application::config::NotifierConfig;
+use lambda::application::services::NotificationService;
 use lambda::domain::errors::AppError;
+use lambda::infrastructure::i18n::Messages;
 use lambda::infrastructure::repositories_impl::FeedbackRepositoryImpl;
 use lambda::infrastructure::{bedrock, secrets, slack};
 use lambda_runtime::{run, service_fn, tracing};
@@ -33,6 +34,7 @@ async fn main() -> Result<(), lambda_runtime::Error> {
     let slack_client = slack::Client::builder()
         .inner_client(reqwest::Client::new())
         .token(slack_token)
+        .messages(Messages::from_language(app_config.language()))
         .build();
 
     let repo = FeedbackRepositoryImpl::builder()

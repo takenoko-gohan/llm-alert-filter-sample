@@ -1,5 +1,6 @@
 use crate::domain::entities::Confidence;
 use crate::domain::errors::SlackError;
+use crate::infrastructure::i18n::Messages;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use flate2::write::GzEncoder;
@@ -65,6 +66,7 @@ struct Response {
 pub struct Client {
     inner_client: reqwest::Client,
     token: String,
+    messages: Messages,
 }
 
 const BASE_URL: &str = "https://slack.com/api";
@@ -94,7 +96,7 @@ impl Client {
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": format!("{} Confidence: *{}*", confidence_emoji, confidence_label)
+                    "text": format!("{} {}: *{}*", confidence_emoji, self.messages.confidence_label(), confidence_label)
                 }
             ]
         }));
@@ -106,7 +108,7 @@ impl Client {
                     "type": "button",
                     "text": {
                         "type": "plain_text",
-                        "text": "フィードバック"
+                        "text": self.messages.feedback_button()
                     },
                     "style": "primary",
                     "value": "send_feedback",
@@ -161,7 +163,7 @@ impl Client {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "_フィードバック済み_"
+                "text": self.messages.feedback_done()
             }
         }));
 
@@ -200,7 +202,7 @@ impl Client {
                 "block_id": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": ":rotating_light: エラーが発生しました :rotating_light:",
+                    "text": self.messages.alert_header(),
                     "emoji": true
                 }
             },
@@ -209,7 +211,7 @@ impl Client {
                 "block_id": "log_group_header",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*CloudWatch Logs ロググループ*"
+                    "text": self.messages.log_group_label()
                 }
             },
             {
@@ -225,7 +227,7 @@ impl Client {
                 "block_id": "message_header",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*ログメッセージ*"
+                    "text": self.messages.message_label()
                 }
             },
             {
@@ -250,7 +252,7 @@ impl Client {
     ) -> Result<(), SlackError> {
         let url = format!("{}/views.open", BASE_URL);
 
-        let view = make_feedback_view(private_metadata);
+        let view = self.make_feedback_view(private_metadata);
 
         let resp = self
             .inner_client
@@ -284,75 +286,76 @@ impl Client {
             })
         }
     }
-}
 
-fn make_feedback_view(private_metadata: &str) -> Value {
-    serde_json::json!({
-        "type": "modal",
-        "callback_id": "send_feedback",
-        "private_metadata": private_metadata,
-        "title": {
-            "type": "plain_text",
-            "text": "フィードバック"
-        },
-        "blocks": [
-            {
-                "type": "section",
-                "block_id": "needs_notification",
-                "text": {
-                    "type": "plain_text",
-                    "text": "通知が必要ですか？"
-                },
-                "accessory": {
-                    "type": "static_select",
-                    "action_id": "needs_notification",
-                    "initial_option": {
-                        "text": {
-                            "type": "plain_text",
-                            "text": "不要"
-                        },
-                        "value": "false"
+    fn make_feedback_view(&self, private_metadata: &str) -> Value {
+        let msgs = &self.messages;
+        serde_json::json!({
+            "type": "modal",
+            "callback_id": "send_feedback",
+            "private_metadata": private_metadata,
+            "title": {
+                "type": "plain_text",
+                "text": msgs.modal_title()
+            },
+            "blocks": [
+                {
+                    "type": "section",
+                    "block_id": "needs_notification",
+                    "text": {
+                        "type": "plain_text",
+                        "text": msgs.needs_notification_question()
                     },
-                    "options": [
-                        {
+                    "accessory": {
+                        "type": "static_select",
+                        "action_id": "needs_notification",
+                        "initial_option": {
                             "text": {
                                 "type": "plain_text",
-                                "text": "不要"
+                                "text": msgs.needs_notification_no()
                             },
                             "value": "false"
                         },
-                        {
-                            "text": {
-                                "type": "plain_text",
-                                "text": "必要"
+                        "options": [
+                            {
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": msgs.needs_notification_no()
+                                },
+                                "value": "false"
                             },
-                            "value": "true"
-                        },
-                    ]
-                }
-            },
-            {
-                "type": "input",
-                "block_id": "reason",
-                "label": {
-                    "type": "plain_text",
-                    "text": "理由"
+                            {
+                                "text": {
+                                    "type": "plain_text",
+                                    "text": msgs.needs_notification_yes()
+                                },
+                                "value": "true"
+                            },
+                        ]
+                    }
                 },
-                "element": {
-                    "type": "plain_text_input",
-                    "action_id": "reason",
-                    "multiline": true
+                {
+                    "type": "input",
+                    "block_id": "reason",
+                    "label": {
+                        "type": "plain_text",
+                        "text": msgs.reason_label()
+                    },
+                    "element": {
+                        "type": "plain_text_input",
+                        "action_id": "reason",
+                        "multiline": true
+                    },
+                    "optional": true
                 },
-                "optional": true
+            ],
+            "close": {
+                "type": "plain_text",
+                "text": msgs.cancel()
             },
-        ],
-        "close": {
-            "type": "plain_text",
-            "text": "キャンセル"
-        },
-        "submit": {
-            "type": "plain_text",
-            "text": "送信"
-        },
-    })
+            "submit": {
+                "type": "plain_text",
+                "text": msgs.submit()
+            },
+        })
+    }
 }
