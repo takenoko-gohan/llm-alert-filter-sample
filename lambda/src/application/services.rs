@@ -8,6 +8,7 @@ use crate::infrastructure::{bedrock, slack};
 use crate::util::now_rfc3339;
 use aws_lambda_events::cloudwatch_logs::LogsEvent;
 use lambda_runtime::LambdaEvent;
+use tokio::time::Instant;
 use typed_builder::TypedBuilder;
 
 #[derive(TypedBuilder)]
@@ -29,10 +30,12 @@ impl NotificationService {
             for log_event in log_events {
                 let message = log_event.message;
 
+                let start = Instant::now();
                 let decision = self
                     .bedrock_client
                     .needs_notification_with_retry(&feedback, &message, &now_rfc3339())
                     .await?;
+                let bedrock_latency_ms = start.elapsed().as_millis() as u64;
 
                 let confidence = decision.confidence();
                 let reason = decision.matched_feedback_reason().unwrap_or("");
@@ -49,6 +52,18 @@ impl NotificationService {
                 } else {
                     decision.needs_notification()
                 };
+
+                let message_preview: String = message.chars().take(100).collect();
+                tracing::info!(
+                    log_group = %log_group,
+                    message_preview = %message_preview,
+                    bedrock_decision = decision.needs_notification(),
+                    should_notify = should_notify,
+                    confidence = ?confidence,
+                    matched_reason = %reason,
+                    bedrock_latency_ms = bedrock_latency_ms,
+                    "Notification decision"
+                );
 
                 if should_notify {
                     self.slack_client

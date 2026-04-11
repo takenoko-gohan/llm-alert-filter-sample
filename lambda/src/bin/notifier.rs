@@ -5,11 +5,23 @@ use lambda::domain::errors::AppError;
 use lambda::infrastructure::i18n::Messages;
 use lambda::infrastructure::repositories_impl::FeedbackRepositoryImpl;
 use lambda::infrastructure::{bedrock, secrets, slack};
-use lambda_runtime::{run, service_fn, tracing};
+use lambda_runtime::{run, service_fn};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), lambda_runtime::Error> {
-    tracing::init_default_subscriber();
+    let env_filter = std::env::var("AWS_LAMBDA_LOG_LEVEL")
+        .ok()
+        .and_then(|level| parse_lambda_log_level(&level))
+        .map(EnvFilter::new)
+        .or_else(|| EnvFilter::try_from_default_env().ok())
+        .unwrap_or_else(|| EnvFilter::new("info"));
+    tracing_subscriber::fmt()
+        .json()
+        .with_ansi(false)
+        .without_time()
+        .with_env_filter(env_filter)
+        .init();
 
     let app_config = NotifierConfig::from_env()?;
 
@@ -54,4 +66,15 @@ async fn main() -> Result<(), lambda_runtime::Error> {
             .map_err(|e: AppError| -> lambda_runtime::Diagnostic { e.into() })
     }))
     .await
+}
+
+fn parse_lambda_log_level(level: &str) -> Option<String> {
+    match level.to_uppercase().as_str() {
+        "TRACE" => Some("trace".into()),
+        "DEBUG" => Some("debug".into()),
+        "INFO" => Some("info".into()),
+        "WARN" => Some("warn".into()),
+        "ERROR" | "FATAL" => Some("error".into()),
+        _ => None,
+    }
 }

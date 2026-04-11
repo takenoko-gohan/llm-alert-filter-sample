@@ -5,11 +5,23 @@ use lambda::infrastructure::i18n::Messages;
 use lambda::infrastructure::{secrets, slack};
 use lambda::interface::middleware::create_auth_layer;
 use lambda::interface::routers::create_feedback_router;
-use lambda_http::{run, tracing, Error};
+use lambda_http::{run, Error};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    tracing::init_default_subscriber();
+    let env_filter = std::env::var("AWS_LAMBDA_LOG_LEVEL")
+        .ok()
+        .and_then(|level| parse_lambda_log_level(&level))
+        .map(EnvFilter::new)
+        .or_else(|| EnvFilter::try_from_default_env().ok())
+        .unwrap_or_else(|| EnvFilter::new("info"));
+    tracing_subscriber::fmt()
+        .json()
+        .with_ansi(false)
+        .without_time()
+        .with_env_filter(env_filter)
+        .init();
 
     let app_config = CollectorConfig::from_env()?;
 
@@ -40,4 +52,15 @@ async fn main() -> Result<(), Error> {
     let app = Router::new().nest("/feedback", feedback).layer(auth);
 
     run(app).await
+}
+
+fn parse_lambda_log_level(level: &str) -> Option<String> {
+    match level.to_uppercase().as_str() {
+        "TRACE" => Some("trace".into()),
+        "DEBUG" => Some("debug".into()),
+        "INFO" => Some("info".into()),
+        "WARN" => Some("warn".into()),
+        "ERROR" | "FATAL" => Some("error".into()),
+        _ => None,
+    }
 }

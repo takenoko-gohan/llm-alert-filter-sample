@@ -28,5 +28,6 @@ base64 = "0.22.1"
 hmac = "0.12.1"
 sha2 = "0.10.9"
 tracing = "0.1.44"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 thiserror = "2"
 rand = "0.9"
