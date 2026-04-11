@@ -31,7 +31,6 @@ async fn main() -> Result<(), lambda_runtime::Error> {
     let bedrock_client = bedrock::Client::builder()
         .inner_client(aws_sdk_bedrockruntime::Client::new(&aws_config))
         .model_id(app_config.model_id().to_string())
-        .top_p(app_config.top_p())
         .prompt_language(app_config.language().clone())
         .max_retries(app_config.max_retries())
         .base_delay_ms(app_config.base_delay_ms())

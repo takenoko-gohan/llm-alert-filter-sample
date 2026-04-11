@@ -5,7 +5,6 @@ use crate::domain::errors::AppError;
 pub struct NotifierConfig {
     table_name: String,
     model_id: String,
-    top_p: f32,
     slack_channel_id: String,
     secret_id: String,
     language: Language,
@@ -15,13 +14,6 @@ pub struct NotifierConfig {
 
 impl NotifierConfig {
     pub fn from_env() -> Result<Self, AppError> {
-        let top_p: f32 = parse_env("BEDROCK_TOP_P")?;
-        if !(0.0..=1.0).contains(&top_p) {
-            return Err(AppError::Config(format!(
-                "BEDROCK_TOP_P must be 0.0..=1.0, got {top_p}"
-            )));
-        }
-
         let language: Language = env_or("APP_LANGUAGE", "en")
             .parse()
             .map_err(|e: String| AppError::Config(e))?;
@@ -43,7 +35,6 @@ impl NotifierConfig {
         Ok(Self {
             table_name: require_env("TABLE_NAME")?,
             model_id: require_env("BEDROCK_MODEL_ID")?,
-            top_p,
             slack_channel_id: require_env("SLACK_CHANNEL_ID")?,
             secret_id: require_env("SECRET_ID")?,
             language,
@@ -58,10 +49,6 @@ impl NotifierConfig {
 
     pub fn model_id(&self) -> &str {
         &self.model_id
-    }
-
-    pub fn top_p(&self) -> f32 {
-        self.top_p
     }
 
     pub fn slack_channel_id(&self) -> &str {
@@ -130,15 +117,6 @@ fn require_env(key: &str) -> Result<String, AppError> {
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
-}
-
-fn parse_env<T: std::str::FromStr>(key: &str) -> Result<T, AppError>
-where
-    T::Err: std::fmt::Display,
-{
-    let val = require_env(key)?;
-    val.parse()
-        .map_err(|e| AppError::Config(format!("{key} is invalid: {e}")))
 }
 
 fn parse_env_or<T: std::str::FromStr>(key: &str, default: T) -> Result<T, AppError>

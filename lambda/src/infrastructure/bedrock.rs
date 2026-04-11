@@ -1,9 +1,9 @@
 use crate::domain::entities::{Confidence, Feedback, Language, NotificationDecision};
 use crate::domain::errors::BedrockError;
 use aws_sdk_bedrockruntime::types::{
-    ContentBlock, ConversationRole, InferenceConfiguration, JsonSchemaDefinition, Message,
-    OutputConfig, OutputFormat, OutputFormatStructure, OutputFormatType, SystemContentBlock, Tool,
-    ToolChoice, ToolConfiguration, ToolInputSchema, ToolSpecification,
+    ContentBlock, ConversationRole, JsonSchemaDefinition, Message, OutputConfig, OutputFormat,
+    OutputFormatStructure, OutputFormatType, SystemContentBlock, Tool, ToolChoice,
+    ToolConfiguration, ToolInputSchema, ToolSpecification,
 };
 use aws_smithy_types::Document;
 use chrono::{DateTime, Utc};
@@ -58,7 +58,6 @@ struct TargetLog {
 pub struct Client {
     inner_client: aws_sdk_bedrockruntime::Client,
     model_id: String,
-    top_p: f32,
     #[builder(default)]
     prompt_language: Language,
     #[builder(default = 3)]
@@ -107,13 +106,10 @@ impl Client {
                 detail: e.to_string(),
             })?;
 
-        let inference_config = InferenceConfiguration::builder().top_p(self.top_p).build();
-
         let resp = if self.supports_structured_output() {
-            self.converse_with_structured_output(msg, inference_config)
-                .await?
+            self.converse_with_structured_output(msg).await?
         } else {
-            self.converse_with_tool_use(msg, inference_config).await?
+            self.converse_with_tool_use(msg).await?
         };
 
         self.parse_response(resp)
@@ -126,7 +122,6 @@ impl Client {
     async fn converse_with_structured_output(
         &self,
         msg: Message,
-        inference_config: InferenceConfiguration,
     ) -> Result<aws_sdk_bedrockruntime::operation::converse::ConverseOutput, BedrockError> {
         let output_config = OutputConfig::builder()
             .text_format(
@@ -156,7 +151,6 @@ impl Client {
                 system_prompt(&self.prompt_language).to_string(),
             ))
             .messages(msg)
-            .inference_config(inference_config)
             .output_config(output_config)
             .send()
             .await
@@ -168,7 +162,6 @@ impl Client {
     async fn converse_with_tool_use(
         &self,
         msg: Message,
-        inference_config: InferenceConfiguration,
     ) -> Result<aws_sdk_bedrockruntime::operation::converse::ConverseOutput, BedrockError> {
         let tool_config = ToolConfiguration::builder()
             .tools(Tool::ToolSpec(
@@ -201,7 +194,6 @@ impl Client {
                 system_prompt(&self.prompt_language).to_string(),
             ))
             .messages(msg)
-            .inference_config(inference_config)
             .tool_config(tool_config)
             .send()
             .await

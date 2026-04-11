@@ -154,7 +154,6 @@ export class LlmAlertFilterStack extends cdk.Stack {
 				//BEDROCK_MODEL_ID: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
 				//BEDROCK_MODEL_ID: "us.anthropic.claude-opus-4-6-v1",
 				BEDROCK_MODEL_ID: "us.anthropic.claude-sonnet-4-6",
-				BEDROCK_TOP_P: "0.9",
 				APP_LANGUAGE: "en",
 				SLACK_CHANNEL_ID: slackChannelId.valueAsString,
 				SECRET_ID: notifierSecrets.secretName,
