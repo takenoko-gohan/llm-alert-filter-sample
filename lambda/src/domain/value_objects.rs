@@ -38,6 +38,6 @@ impl TryFrom<Timestamp> for DateTime<Utc> {
 
 impl Timestamp {
     pub(crate) fn new() -> Self {
-        Self(chrono::Utc::now().timestamp())
+        Self(Utc::now().timestamp())
     }
 }
