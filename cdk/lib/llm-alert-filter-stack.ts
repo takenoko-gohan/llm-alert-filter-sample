@@ -12,6 +12,35 @@ export class LlmAlertFilterStack extends cdk.Stack {
 			description: "Slack Channel",
 		});
 
+		const bedrockModelId = new cdk.CfnParameter(this, "BedrockModelId", {
+			type: "String",
+			default: "us.amazon.nova-2-lite-v1:0",
+			description: "Bedrock model ID for inference",
+		});
+
+		const appLanguage = new cdk.CfnParameter(this, "AppLanguage", {
+			type: "String",
+			default: "en",
+			allowedValues: ["en", "ja"],
+			description: "Language for Slack notifications and prompts",
+		});
+
+		const maxRetries = new cdk.CfnParameter(this, "MaxRetries", {
+			type: "Number",
+			default: 3,
+			minValue: 0,
+			maxValue: 6,
+			description: "Max retries for Bedrock API calls (0-6)",
+		});
+
+		const baseDelayMs = new cdk.CfnParameter(this, "BaseDelayMs", {
+			type: "Number",
+			default: 500,
+			minValue: 100,
+			maxValue: 10000,
+			description: "Base delay in ms for retry backoff (100-10000)",
+		});
+
 		// DynamoDB Table
 		const table = new cdk.aws_dynamodb.Table(this, "FeedbackTable", {
 			tableName: "llm_alert_filter_feedback",
@@ -151,10 +180,10 @@ export class LlmAlertFilterStack extends cdk.Stack {
 			architecture: cdk.aws_lambda.Architecture.ARM_64,
 			environment: {
 				TABLE_NAME: table.tableName,
-				//BEDROCK_MODEL_ID: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-				//BEDROCK_MODEL_ID: "us.anthropic.claude-opus-4-6-v1",
-				BEDROCK_MODEL_ID: "us.anthropic.claude-sonnet-4-6",
-				APP_LANGUAGE: "en",
+				BEDROCK_MODEL_ID: bedrockModelId.valueAsString,
+				APP_LANGUAGE: appLanguage.valueAsString,
+				MAX_RETRIES: maxRetries.valueAsString,
+				BASE_DELAY_MS: baseDelayMs.valueAsString,
 				SLACK_CHANNEL_ID: slackChannelId.valueAsString,
 				SECRET_ID: notifierSecrets.secretName,
 			},
@@ -176,7 +205,7 @@ export class LlmAlertFilterStack extends cdk.Stack {
 				TABLE_NAME: table.tableName,
 				SECRET_ID: collectorSecrets.secretName,
 				SLACK_CHANNEL_ID: slackChannelId.valueAsString,
-				APP_LANGUAGE: "en",
+				APP_LANGUAGE: appLanguage.valueAsString,
 			},
 			manifestPath: "../lambda/Cargo.toml",
 			binaryName: "collector",
