@@ -5,24 +5,12 @@ use lambda::domain::errors::AppError;
 use lambda::infrastructure::i18n::Messages;
 use lambda::infrastructure::repositories_impl::FeedbackRepositoryImpl;
 use lambda::infrastructure::{bedrock, secrets, slack};
-use lambda::util::parse_lambda_log_level;
+use lambda::util::init_tracing;
 use lambda_runtime::{run, service_fn};
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), lambda_runtime::Error> {
-    let env_filter = std::env::var("AWS_LAMBDA_LOG_LEVEL")
-        .ok()
-        .and_then(|level| parse_lambda_log_level(&level))
-        .map(EnvFilter::new)
-        .or_else(|| EnvFilter::try_from_default_env().ok())
-        .unwrap_or_else(|| EnvFilter::new("info"));
-    tracing_subscriber::fmt()
-        .json()
-        .with_ansi(false)
-        .without_time()
-        .with_env_filter(env_filter)
-        .init();
+    init_tracing();
 
     let app_config = NotifierConfig::from_env()?;
 

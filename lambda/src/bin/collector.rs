@@ -5,24 +5,12 @@ use lambda::infrastructure::i18n::Messages;
 use lambda::infrastructure::{secrets, slack};
 use lambda::interface::middleware::create_auth_layer;
 use lambda::interface::routers::create_feedback_router;
-use lambda::util::parse_lambda_log_level;
+use lambda::util::init_tracing;
 use lambda_http::{run, Error};
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let env_filter = std::env::var("AWS_LAMBDA_LOG_LEVEL")
-        .ok()
-        .and_then(|level| parse_lambda_log_level(&level))
-        .map(EnvFilter::new)
-        .or_else(|| EnvFilter::try_from_default_env().ok())
-        .unwrap_or_else(|| EnvFilter::new("info"));
-    tracing_subscriber::fmt()
-        .json()
-        .with_ansi(false)
-        .without_time()
-        .with_env_filter(env_filter)
-        .init();
+    init_tracing();
 
     let app_config = CollectorConfig::from_env()?;
 
