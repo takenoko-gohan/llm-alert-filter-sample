@@ -21,3 +21,14 @@ pub(crate) fn now_timestamp() -> i64 {
 pub(crate) fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
 }
+
+pub fn parse_lambda_log_level(level: &str) -> Option<String> {
+    match level.to_uppercase().as_str() {
+        "TRACE" => Some("trace".into()),
+        "DEBUG" => Some("debug".into()),
+        "INFO" => Some("info".into()),
+        "WARN" => Some("warn".into()),
+        "ERROR" | "FATAL" => Some("error".into()),
+        _ => None,
+    }
+}

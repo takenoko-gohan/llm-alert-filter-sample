@@ -2,4 +2,4 @@ pub mod application;
 pub mod domain;
 pub mod infrastructure;
 pub mod interface;
-pub(crate) mod util;
+pub mod util;

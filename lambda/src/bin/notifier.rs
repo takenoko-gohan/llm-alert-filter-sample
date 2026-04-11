@@ -5,6 +5,7 @@ use lambda::domain::errors::AppError;
 use lambda::infrastructure::i18n::Messages;
 use lambda::infrastructure::repositories_impl::FeedbackRepositoryImpl;
 use lambda::infrastructure::{bedrock, secrets, slack};
+use lambda::util::parse_lambda_log_level;
 use lambda_runtime::{run, service_fn};
 use tracing_subscriber::EnvFilter;
 
@@ -65,15 +66,4 @@ async fn main() -> Result<(), lambda_runtime::Error> {
             .map_err(|e: AppError| -> lambda_runtime::Diagnostic { e.into() })
     }))
     .await
-}
-
-fn parse_lambda_log_level(level: &str) -> Option<String> {
-    match level.to_uppercase().as_str() {
-        "TRACE" => Some("trace".into()),
-        "DEBUG" => Some("debug".into()),
-        "INFO" => Some("info".into()),
-        "WARN" => Some("warn".into()),
-        "ERROR" | "FATAL" => Some("error".into()),
-        _ => None,
-    }
 }

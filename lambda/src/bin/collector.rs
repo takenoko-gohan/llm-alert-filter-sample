@@ -5,6 +5,7 @@ use lambda::infrastructure::i18n::Messages;
 use lambda::infrastructure::{secrets, slack};
 use lambda::interface::middleware::create_auth_layer;
 use lambda::interface::routers::create_feedback_router;
+use lambda::util::parse_lambda_log_level;
 use lambda_http::{run, Error};
 use tracing_subscriber::EnvFilter;
 
@@ -52,15 +53,4 @@ async fn main() -> Result<(), Error> {
     let app = Router::new().nest("/feedback", feedback).layer(auth);
 
     run(app).await
-}
-
-fn parse_lambda_log_level(level: &str) -> Option<String> {
-    match level.to_uppercase().as_str() {
-        "TRACE" => Some("trace".into()),
-        "DEBUG" => Some("debug".into()),
-        "INFO" => Some("info".into()),
-        "WARN" => Some("warn".into()),
-        "ERROR" | "FATAL" => Some("error".into()),
-        _ => None,
-    }
 }
