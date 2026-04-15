@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  actions-check:
+    name: Actions Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Required for actions/checkout
+      actions: read # Required for zizmor online audits
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Download actionlint
+        id: get_actionlint
+        run: bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+        shell: bash
+
+      - name: Run actionlint
+        env:
+          ACTIONLINT: ${{ steps.get_actionlint.outputs.executable }}
+        run: |
+          "${ACTIONLINT}" -color
+        shell: bash
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@b1d7e1fb5de872772f31590499237e7cce841e8e # v0.5.3
+        with:
+          persona: pedantic
+          advanced-security: false
+
+  rust-check:
+    name: Rust Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lambda
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
+        with:
+          components: rustfmt, clippy
+
+      - name: fmt
+        run: cargo fmt --check
+
+      - name: clippy
+        run: cargo clippy
+
+      - name: test
+        run: cargo test
+
+  cdk-check:
+    name: CDK Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cdk
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: cdk/package-lock.json
+
+      - name: install
+        run: npm ci
+
+      - name: biome check
+        run: npm run check
+
+      - name: test
+        run: npm test
+
+      - name: cdk synth
+        run: npx cdk synth --no-lookups
