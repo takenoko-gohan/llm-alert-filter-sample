@@ -4,75 +4,96 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Bedrock Claude を使って CloudWatch Logs のエラーログを評価し、過去のフィードバック履歴に基づいて Slack 通知の要否を判定するサーバーレスアプリケーション。Rust Lambda + AWS CDK (TypeScript) 構成。
+A serverless application that uses Amazon Bedrock to evaluate CloudWatch Logs error logs and determine whether to send Slack notifications, based on past user feedback history. Built with Rust Lambda + AWS CDK (TypeScript).
 
 ## Build & Development Commands
 
 ### Rust Lambda
 
 ```bash
-# ビルド（cargo-lambda 必須）
+# Build (requires cargo-lambda)
 cd lambda && cargo lambda build --release --arm64
 
-# テスト
+# Test
 cd lambda && cargo test
 
-# clippy
+# Clippy
 cd lambda && cargo clippy
 
-# フォーマット
+# Format
 cd lambda && cargo fmt
 ```
 
 ### CDK (TypeScript)
 
 ```bash
-# 依存インストール
+# Install dependencies
 cd cdk && npm ci
 
-# ビルド
-cd cdk && npm run build
+# Synth (compile + generate CloudFormation template)
+cd cdk && npx cdk synth
 
-# テスト
+# Test
 cd cdk && npm test
 
-# リント・フォーマット
+# Lint & format
 cd cdk && npm run check        # biome check
 cd cdk && npm run check:fix    # biome check --write
 cd cdk && npm run fmt          # biome format --write
 cd cdk && npm run lint         # biome lint
 cd cdk && npm run lint:fix     # biome lint --write
 
-# CDK デプロイ
+# CDK deploy
 cd cdk && npx cdk deploy
 ```
 
 ## Architecture
 
-クリーンアーキテクチャ（Domain → Application → Infrastructure → Interface）。
+Clean Architecture (Domain → Application → Infrastructure → Interface) combined with Ports & Adapters (Hexagonal) pattern.
 
-### Lambda バイナリ（2つ）
+### Lambda Binaries (2)
 
-- **notifier** (`lambda/src/bin/notifier.rs`): CloudWatch Logs サブスクリプションフィルタから起動。エラーログを Bedrock Claude で評価し、通知要と判定されれば Slack に投稿。
-- **collector** (`lambda/src/bin/collector.rs`): Slack のボタン操作・モーダル送信を受け取る Function URL エンドポイント（Axum）。ユーザーフィードバックを DynamoDB に保存。
+- **notifier** (`lambda/src/bin/notifier.rs`): Triggered by CloudWatch Logs subscription filters. Evaluates error logs via Bedrock and posts to Slack if notification is needed.
+- **collector** (`lambda/src/bin/collector.rs`): Function URL endpoint (Axum) that receives Slack button interactions and modal submissions. Stores user feedback in DynamoDB.
 
-### レイヤー構成 (`lambda/src/`)
+### Layer Structure (`lambda/src/`)
 
-- **domain/**: Feedback エンティティ、FeedbackId/Timestamp 値オブジェクト、Repository トレイト
-- **application/services.rs**: NotificationService（ログ評価→通知）、CollectionService（フィードバック収集）
-- **infrastructure/**: Bedrock Converse API、Slack API、Secrets Manager、DynamoDB Repository 実装
-- **interface/**: Axum ルーター、Slack リクエスト署名検証ミドルウェア、ハンドラー
+- **domain/**: Feedback entity, FeedbackId/Timestamp value objects, FeedbackRepository trait, Language/Confidence/NotificationDecision types
+- **application/ports.rs**: NotificationJudge trait (Bedrock judgment abstraction), AlertNotifier trait (Slack operations abstraction)
+- **application/config.rs**: NotifierConfig / CollectorConfig (environment variable validation)
+- **application/services.rs**: NotificationService (log evaluation → notification), CollectionService (feedback collection) — generic over port traits
+- **infrastructure/**: Bedrock Converse API, Slack API, Secrets Manager, DynamoDB repository implementation, i18n messages
+- **interface/**: Axum router, Slack request signature verification middleware, handlers
 
-### Bedrock 連携の要点
+### Bedrock Integration
 
-- Converse API で `judge_needs_notification` ツールを定義し、boolean を返させる
-- ログメッセージの類似度 80% 以上を「同様のログ」とみなす
-- 矛盾するフィードバックがある場合は最新を優先
-- システムプロンプトに5つの推論ルールを定義
+- Converse API supports two response modes:
+  - **Structured Output** (JSON Schema): For non-Nova models (e.g., Claude)
+  - **Tool Use**: Fallback for Amazon Nova models
+- `parse_response()` prioritizes ToolUse blocks, falls back to Text JSON for unified parsing
+- Response schema: `needs_notification` (bool), `confidence` ("high"/"medium"/"low"), `matched_feedback_reason` (string)
+- Retry: Exponential backoff with jitter (only ThrottlingException / ServiceUnavailableException are retryable)
+- Fail-safe: Returns `needs_notification=true, confidence=Low` when all retries are exhausted
+- Service-level fail-safe: Overrides suppression to notify when confidence is not High (false-negative avoidance)
+- Log messages with 80%+ similarity are treated as the same class of log
+- When feedback conflicts, the most recent feedback takes precedence
+- System prompts are external files in English and Japanese (`infrastructure/prompts/`)
 
-### インフラ（CDK）
+### Infrastructure (CDK)
 
-- リージョン: us-east-1
-- DynamoDB: PAY_PER_REQUEST、GSI `log_group_index`
-- Lambda: ARM_64、128MB（notifier: 120s / collector: 30s タイムアウト）
-- Secrets Manager: Slack トークン・署名シークレットを管理
+- Region: Defaults to us-east-1 (configurable via CDK context / environment variables)
+- DynamoDB: PAY_PER_REQUEST, GSI `log_group_index`
+- Lambda: ARM_64, 128MB (notifier: 120s / collector: 30s timeout)
+- Secrets Manager: Manages Slack token and signing secret
+- CfnParameters: BedrockModelId, AppLanguage, MaxRetries, BaseDelayMs, SlackChannelId
+
+### Testing
+
+- Service layer: Manual mocks (MockRepo, MockJudge, MockNotifier) for business logic testing
+- Infrastructure layer: `aws-smithy-mocks` for AWS SDK mock testing (DynamoDB, Bedrock retry, Secrets Manager)
+- CDK: `jest` + `jest.mock("cargo-lambda-cdk")` for build-free testing
+
+### CI/CD
+
+- GitHub Actions: actionlint + zizmor (workflow validation), Rust check, CDK check — 3 parallel jobs
+- Renovate: Daily updates for npm / cargo / GitHub Actions dependencies, lock file maintenance enabled
