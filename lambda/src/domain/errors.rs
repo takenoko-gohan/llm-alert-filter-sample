@@ -87,3 +87,37 @@ pub enum SlackError {
     #[error("HTTP request failed: {0}")]
     HttpError(#[from] reqwest::Error),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_request_build_is_not_retryable() {
+        let err = BedrockError::RequestBuild {
+            detail: "test".into(),
+        };
+        assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn test_no_valid_block_is_not_retryable() {
+        assert!(!BedrockError::NoValidBlock.is_retryable());
+    }
+
+    #[test]
+    fn test_response_parse_is_not_retryable() {
+        let err = BedrockError::ResponseParse {
+            detail: "test".into(),
+        };
+        assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn test_throttled_is_retryable() {
+        let err = BedrockError::Throttled {
+            retry_after_ms: 1000,
+        };
+        assert!(err.is_retryable());
+    }
+}

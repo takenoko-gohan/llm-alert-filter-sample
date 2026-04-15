@@ -114,3 +114,56 @@ impl Messages {
         &self.submit
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_en_messages_all_non_empty() {
+        let msgs = Messages::from_language(&Language::En);
+        assert!(!msgs.alert_header().is_empty());
+        assert!(!msgs.log_group_label().is_empty());
+        assert!(!msgs.message_label().is_empty());
+        assert!(!msgs.confidence_label().is_empty());
+        assert!(!msgs.feedback_button().is_empty());
+        assert!(!msgs.feedback_done().is_empty());
+        assert!(!msgs.modal_title().is_empty());
+        assert!(!msgs.needs_notification_question().is_empty());
+        assert!(!msgs.needs_notification_yes().is_empty());
+        assert!(!msgs.needs_notification_no().is_empty());
+        assert!(!msgs.reason_label().is_empty());
+        assert!(!msgs.cancel().is_empty());
+        assert!(!msgs.submit().is_empty());
+    }
+
+    #[test]
+    fn test_ja_messages_all_non_empty() {
+        let msgs = Messages::from_language(&Language::Ja);
+        assert!(!msgs.alert_header().is_empty());
+        assert!(!msgs.log_group_label().is_empty());
+        assert!(!msgs.message_label().is_empty());
+        assert!(!msgs.feedback_button().is_empty());
+        assert!(!msgs.modal_title().is_empty());
+        assert!(!msgs.needs_notification_question().is_empty());
+        assert!(!msgs.reason_label().is_empty());
+        assert!(!msgs.cancel().is_empty());
+        assert!(!msgs.submit().is_empty());
+    }
+
+    #[test]
+    fn test_en_ja_differ_on_localized_fields() {
+        let en = Messages::from_language(&Language::En);
+        let ja = Messages::from_language(&Language::Ja);
+        assert_ne!(en.alert_header(), ja.alert_header());
+        assert_ne!(en.feedback_button(), ja.feedback_button());
+        assert_ne!(en.cancel(), ja.cancel());
+    }
+
+    #[test]
+    fn test_confidence_label_same_across_languages() {
+        let en = Messages::from_language(&Language::En);
+        let ja = Messages::from_language(&Language::Ja);
+        assert_eq!(en.confidence_label(), ja.confidence_label());
+    }
+}

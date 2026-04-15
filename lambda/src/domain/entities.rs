@@ -142,4 +142,65 @@ mod tests {
         assert!(feedback.needs_notification);
         assert_eq!(feedback.reason, Some("Just because".to_string()));
     }
+
+    #[test]
+    fn test_notification_decision_serialize() {
+        let decision = NotificationDecision::builder()
+            .needs_notification(true)
+            .confidence(Some(Confidence::High))
+            .matched_feedback_reason(Some("test reason".to_string()))
+            .build();
+
+        let json = serde_json::to_string(&decision).unwrap();
+        assert!(json.contains("\"needs_notification\":true"));
+        assert!(json.contains("\"confidence\":\"high\""));
+        assert!(json.contains("\"matched_feedback_reason\":\"test reason\""));
+    }
+
+    #[test]
+    fn test_notification_decision_deserialize() {
+        let json = r#"{"needs_notification":false,"confidence":"medium","matched_feedback_reason":"known issue"}"#;
+        let decision: NotificationDecision = serde_json::from_str(json).unwrap();
+
+        assert!(!decision.needs_notification());
+        assert_eq!(decision.confidence(), Some(&Confidence::Medium));
+        assert_eq!(decision.matched_feedback_reason(), Some("known issue"));
+    }
+
+    #[test]
+    fn test_notification_decision_deserialize_minimal() {
+        let json = r#"{"needs_notification":true}"#;
+        let decision: NotificationDecision = serde_json::from_str(json).unwrap();
+
+        assert!(decision.needs_notification());
+        assert_eq!(decision.confidence(), None);
+        assert_eq!(decision.matched_feedback_reason(), None);
+    }
+
+    #[test]
+    fn test_language_from_str() {
+        assert!(matches!("en".parse::<Language>(), Ok(Language::En)));
+        assert!(matches!("ja".parse::<Language>(), Ok(Language::Ja)));
+        assert!("fr".parse::<Language>().is_err());
+    }
+
+    #[test]
+    fn test_language_display() {
+        assert_eq!(Language::En.to_string(), "en");
+        assert_eq!(Language::Ja.to_string(), "ja");
+    }
+
+    #[test]
+    fn test_confidence_is_high() {
+        assert!(Confidence::High.is_high());
+        assert!(!Confidence::Medium.is_high());
+        assert!(!Confidence::Low.is_high());
+    }
+
+    #[test]
+    fn test_confidence_emoji() {
+        assert_eq!(Confidence::High.emoji(), ":large_green_circle:");
+        assert_eq!(Confidence::Medium.emoji(), ":large_yellow_circle:");
+        assert_eq!(Confidence::Low.emoji(), ":red_circle:");
+    }
 }

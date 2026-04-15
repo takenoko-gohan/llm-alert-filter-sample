@@ -49,3 +49,59 @@ fn parse_lambda_log_level(level: &str) -> Option<String> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[test]
+    fn test_parse_lambda_log_level_all_variants() {
+        assert_eq!(parse_lambda_log_level("TRACE"), Some("trace".into()));
+        assert_eq!(parse_lambda_log_level("DEBUG"), Some("debug".into()));
+        assert_eq!(parse_lambda_log_level("INFO"), Some("info".into()));
+        assert_eq!(parse_lambda_log_level("WARN"), Some("warn".into()));
+        assert_eq!(parse_lambda_log_level("ERROR"), Some("error".into()));
+        assert_eq!(parse_lambda_log_level("FATAL"), Some("error".into()));
+    }
+
+    #[test]
+    fn test_parse_lambda_log_level_case_insensitive() {
+        assert_eq!(parse_lambda_log_level("info"), Some("info".into()));
+        assert_eq!(parse_lambda_log_level("Warn"), Some("warn".into()));
+        assert_eq!(parse_lambda_log_level("fatal"), Some("error".into()));
+    }
+
+    #[test]
+    fn test_parse_lambda_log_level_unknown() {
+        assert_eq!(parse_lambda_log_level("UNKNOWN"), None);
+        assert_eq!(parse_lambda_log_level(""), None);
+    }
+
+    #[derive(Deserialize)]
+    struct BoolWrapper {
+        #[serde(deserialize_with = "deserialize_bool")]
+        value: bool,
+    }
+
+    #[test]
+    fn test_deserialize_bool_true() {
+        let json = r#"{"value": "true"}"#;
+        let wrapper: BoolWrapper = serde_json::from_str(json).unwrap();
+        assert!(wrapper.value);
+    }
+
+    #[test]
+    fn test_deserialize_bool_false() {
+        let json = r#"{"value": "false"}"#;
+        let wrapper: BoolWrapper = serde_json::from_str(json).unwrap();
+        assert!(!wrapper.value);
+    }
+
+    #[test]
+    fn test_deserialize_bool_invalid() {
+        let json = r#"{"value": "yes"}"#;
+        let result: Result<BoolWrapper, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+}

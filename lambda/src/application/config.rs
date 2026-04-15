@@ -130,3 +130,141 @@ where
         Err(_) => Ok(default),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn set_required_env() {
+        std::env::set_var("TABLE_NAME", "test-table");
+        std::env::set_var("BEDROCK_MODEL_ID", "test-model");
+        std::env::set_var("SLACK_CHANNEL_ID", "C123");
+        std::env::set_var("SECRET_ID", "test-secret");
+    }
+
+    fn clear_env() {
+        for key in [
+            "TABLE_NAME",
+            "BEDROCK_MODEL_ID",
+            "SLACK_CHANNEL_ID",
+            "SECRET_ID",
+            "APP_LANGUAGE",
+            "MAX_RETRIES",
+            "BASE_DELAY_MS",
+        ] {
+            std::env::remove_var(key);
+        }
+    }
+
+    #[test]
+    fn test_valid_config() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        set_required_env();
+
+        let config = NotifierConfig::from_env();
+        assert!(config.is_ok());
+        let config = config.unwrap();
+        assert_eq!(config.table_name(), "test-table");
+        assert_eq!(config.max_retries(), 3);
+        assert_eq!(config.base_delay_ms(), 500);
+
+        clear_env();
+    }
+
+    #[test]
+    fn test_max_retries_out_of_range() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        set_required_env();
+        std::env::set_var("MAX_RETRIES", "7");
+
+        let result = NotifierConfig::from_env();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("MAX_RETRIES"));
+
+        clear_env();
+    }
+
+    #[test]
+    fn test_base_delay_ms_too_low() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        set_required_env();
+        std::env::set_var("BASE_DELAY_MS", "50");
+
+        let result = NotifierConfig::from_env();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("BASE_DELAY_MS"));
+
+        clear_env();
+    }
+
+    #[test]
+    fn test_base_delay_ms_too_high() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        set_required_env();
+        std::env::set_var("BASE_DELAY_MS", "20000");
+
+        let result = NotifierConfig::from_env();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("BASE_DELAY_MS"));
+
+        clear_env();
+    }
+
+    #[test]
+    fn test_missing_required_env() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        clear_env();
+
+        let result = NotifierConfig::from_env();
+        assert!(result.is_err());
+
+        clear_env();
+    }
+
+    #[test]
+    fn test_max_retries_boundary_values() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        set_required_env();
+
+        std::env::set_var("MAX_RETRIES", "0");
+        assert!(NotifierConfig::from_env().is_ok());
+
+        std::env::set_var("MAX_RETRIES", "6");
+        assert!(NotifierConfig::from_env().is_ok());
+
+        clear_env();
+    }
+
+    #[test]
+    fn test_base_delay_ms_boundary_values() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        set_required_env();
+
+        std::env::set_var("BASE_DELAY_MS", "100");
+        assert!(NotifierConfig::from_env().is_ok());
+
+        std::env::set_var("BASE_DELAY_MS", "10000");
+        assert!(NotifierConfig::from_env().is_ok());
+
+        clear_env();
+    }
+
+    #[test]
+    fn test_collector_config_valid() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::set_var("TABLE_NAME", "test-table");
+        std::env::set_var("SECRET_ID", "test-secret");
+        std::env::set_var("SLACK_CHANNEL_ID", "C123");
+
+        let config = CollectorConfig::from_env();
+        assert!(config.is_ok());
+        let config = config.unwrap();
+        assert_eq!(config.table_name(), "test-table");
+        assert!(matches!(config.language(), Language::En));
+
+        clear_env();
+    }
+}

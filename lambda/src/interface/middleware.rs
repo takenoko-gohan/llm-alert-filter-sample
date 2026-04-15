@@ -88,3 +88,64 @@ fn make_error_response() -> Response<Body> {
 pub fn create_auth_layer(signing_secret: String) -> AsyncRequireAuthorizationLayer<Auth> {
     AsyncRequireAuthorizationLayer::new(Auth::builder().signing_secret(signing_secret).build())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::Request;
+
+    fn make_signature(secret: &str, timestamp: &str, body: &str) -> String {
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        let hash = format!("v0:{}:{}", timestamp, body);
+        mac.update(hash.as_bytes());
+        format!("v0={:x}", mac.finalize().into_bytes())
+    }
+
+    fn make_parts(signature: &str, timestamp: &str) -> Parts {
+        let request = Request::builder()
+            .header("X-Slack-Signature", signature)
+            .header("X-Slack-Request-Timestamp", timestamp)
+            .body(())
+            .unwrap();
+        request.into_parts().0
+    }
+
+    #[tokio::test]
+    async fn test_valid_signature() {
+        let secret = "test_secret";
+        let body = "test_body";
+        let timestamp = &now_timestamp().to_string();
+        let signature = make_signature(secret, timestamp, body);
+        let parts = make_parts(&signature, timestamp);
+
+        let result = check_signature(&parts, body.as_bytes(), secret)
+            .await
+            .unwrap();
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_invalid_signature() {
+        let secret = "test_secret";
+        let body = "test_body";
+        let timestamp = &now_timestamp().to_string();
+        let parts = make_parts("v0=invalid_signature", timestamp);
+
+        let result = check_signature(&parts, body.as_bytes(), secret)
+            .await
+            .unwrap();
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_expired_timestamp() {
+        let secret = "test_secret";
+        let body = "test_body";
+        let expired_timestamp = (now_timestamp() - 600).to_string();
+        let signature = make_signature(secret, &expired_timestamp, body);
+        let parts = make_parts(&signature, &expired_timestamp);
+
+        let result = check_signature(&parts, body.as_bytes(), secret).await;
+        assert!(result.is_err());
+    }
+}

@@ -359,3 +359,30 @@ impl Client {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_private_metadata_roundtrip() {
+        let original = PrivateMetadata::builder()
+            .ts("1234567890.123456".to_string())
+            .log_group("/aws/lambda/test-function".to_string())
+            .message("Error: something went wrong".to_string())
+            .build();
+
+        let encoded = original.encode_base64().unwrap();
+        let decoded = PrivateMetadata::try_from(encoded.as_str()).unwrap();
+
+        assert_eq!(decoded.ts(), "1234567890.123456");
+        assert_eq!(decoded.log_group(), "/aws/lambda/test-function");
+        assert_eq!(decoded.message(), "Error: something went wrong");
+    }
+
+    #[test]
+    fn test_private_metadata_invalid_base64() {
+        let result = PrivateMetadata::try_from("not-valid-base64!!!");
+        assert!(result.is_err());
+    }
+}

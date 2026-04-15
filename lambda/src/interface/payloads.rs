@@ -147,3 +147,109 @@ pub(crate) struct SelectedOption {
     #[serde(deserialize_with = "deserialize_bool")]
     value: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_open_modal() {
+        let json = serde_json::json!({
+            "type": "block_actions",
+            "trigger_id": "trigger-123",
+            "message": {
+                "ts": "1234567890.123456",
+                "blocks": [
+                    { "block_id": "header", "text": { "text": "header" } },
+                    { "block_id": "log_group", "text": { "text": "/aws/lambda/test" } },
+                    { "block_id": "message", "text": { "text": "Error occurred" } },
+                    { "block_id": "divider" }
+                ]
+            }
+        });
+
+        let payload: InteractivityPayload = serde_json::from_value(json).unwrap();
+        match payload {
+            InteractivityPayload::BlockActions(BlockActions::OpenModal(modal)) => {
+                assert_eq!(modal.trigger_id(), "trigger-123");
+                assert_eq!(modal.get_ts(), "1234567890.123456");
+                assert_eq!(modal.get_log_group(), Some("/aws/lambda/test"));
+                assert_eq!(modal.get_message(), Some("Error occurred"));
+            }
+            _ => panic!("Expected BlockActions(OpenModal)"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_view_submission() {
+        let json = r#"{
+            "type": "view_submission",
+            "view": {
+                "private_metadata": "encoded-metadata",
+                "state": {
+                    "values": {
+                        "needs_notification": {
+                            "needs_notification": {
+                                "selected_option": {
+                                    "value": "true"
+                                }
+                            }
+                        },
+                        "reason": {
+                            "reason": {
+                                "value": "This is important"
+                            }
+                        }
+                    }
+                }
+            }
+        }"#;
+
+        let payload: InteractivityPayload = serde_json::from_str(json).unwrap();
+        match payload {
+            InteractivityPayload::ViewSubmission(submission) => {
+                assert_eq!(submission.get_private_metadata(), "encoded-metadata");
+                let (needs, reason) = submission.get_modal_values().unwrap();
+                assert!(needs);
+                assert_eq!(reason, Some("This is important".to_string()));
+            }
+            _ => panic!("Expected ViewSubmission"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_view_submission_false() {
+        let json = r#"{
+            "type": "view_submission",
+            "view": {
+                "private_metadata": "test",
+                "state": {
+                    "values": {
+                        "needs_notification": {
+                            "needs_notification": {
+                                "selected_option": {
+                                    "value": "false"
+                                }
+                            }
+                        },
+                        "reason": {
+                            "reason": {
+                                "value": null
+                            }
+                        }
+                    }
+                }
+            }
+        }"#;
+
+        let payload: InteractivityPayload = serde_json::from_str(json).unwrap();
+        match payload {
+            InteractivityPayload::ViewSubmission(submission) => {
+                let (needs, reason) = submission.get_modal_values().unwrap();
+                assert!(!needs);
+                assert_eq!(reason, None);
+            }
+            _ => panic!("Expected ViewSubmission"),
+        }
+    }
+}

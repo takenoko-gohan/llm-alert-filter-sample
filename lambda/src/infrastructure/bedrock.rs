@@ -414,3 +414,166 @@ impl Client {
             .build())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aws_sdk_bedrockruntime::operation::converse::ConverseOutput;
+    use aws_sdk_bedrockruntime::types::{
+        ContentBlock, ConverseOutput as ConverseOutputType, Message, ToolUseBlock,
+    };
+
+    fn make_test_client() -> Client {
+        let config = aws_sdk_bedrockruntime::Config::builder()
+            .behavior_version(aws_sdk_bedrockruntime::config::BehaviorVersion::latest())
+            .build();
+        Client::builder()
+            .inner_client(aws_sdk_bedrockruntime::Client::from_conf(config))
+            .model_id("test-model".to_string())
+            .build()
+    }
+
+    fn make_tool_use_output(
+        needs_notification: bool,
+        confidence: &str,
+        reason: &str,
+    ) -> ConverseOutput {
+        let tool_input = Document::Object(HashMap::from([
+            (
+                "needs_notification".into(),
+                Document::Bool(needs_notification),
+            ),
+            ("confidence".into(), Document::String(confidence.into())),
+            (
+                "matched_feedback_reason".into(),
+                Document::String(reason.into()),
+            ),
+        ]));
+
+        let tool_use = ContentBlock::ToolUse(
+            ToolUseBlock::builder()
+                .tool_use_id("test-id")
+                .name("judge_needs_notification")
+                .input(tool_input)
+                .build()
+                .unwrap(),
+        );
+
+        let message = Message::builder()
+            .role(ConversationRole::Assistant)
+            .content(tool_use)
+            .build()
+            .unwrap();
+
+        ConverseOutput::builder()
+            .output(ConverseOutputType::Message(message))
+            .stop_reason(aws_sdk_bedrockruntime::types::StopReason::ToolUse)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn test_parse_notification_needed() {
+        let client = make_test_client();
+        let output = make_tool_use_output(true, "high", "Matched critical error pattern");
+
+        let decision = client.parse_response(output).unwrap();
+        assert!(decision.needs_notification());
+        assert_eq!(decision.confidence(), Some(&Confidence::High));
+        assert_eq!(
+            decision.matched_feedback_reason(),
+            Some("Matched critical error pattern")
+        );
+    }
+
+    #[test]
+    fn test_parse_notification_not_needed() {
+        let client = make_test_client();
+        let output = make_tool_use_output(false, "high", "Known benign error");
+
+        let decision = client.parse_response(output).unwrap();
+        assert!(!decision.needs_notification());
+        assert_eq!(decision.confidence(), Some(&Confidence::High));
+    }
+
+    #[test]
+    fn test_parse_no_valid_block() {
+        let client = make_test_client();
+
+        let message = Message::builder()
+            .role(ConversationRole::Assistant)
+            .content(ContentBlock::Text("Hello".to_string()))
+            .build()
+            .unwrap();
+
+        let output = ConverseOutput::builder()
+            .output(ConverseOutputType::Message(message))
+            .stop_reason(aws_sdk_bedrockruntime::types::StopReason::EndTurn)
+            .build()
+            .unwrap();
+
+        let err = client.parse_response(output).unwrap_err();
+        assert!(matches!(err, BedrockError::NoValidBlock));
+    }
+
+    #[test]
+    fn test_parse_missing_confidence() {
+        let client = make_test_client();
+
+        let tool_input = Document::Object(HashMap::from([
+            ("needs_notification".into(), Document::Bool(true)),
+            (
+                "matched_feedback_reason".into(),
+                Document::String("test".into()),
+            ),
+        ]));
+
+        let tool_use = ContentBlock::ToolUse(
+            ToolUseBlock::builder()
+                .tool_use_id("test-id")
+                .name("judge_needs_notification")
+                .input(tool_input)
+                .build()
+                .unwrap(),
+        );
+
+        let message = Message::builder()
+            .role(ConversationRole::Assistant)
+            .content(tool_use)
+            .build()
+            .unwrap();
+
+        let output = ConverseOutput::builder()
+            .output(ConverseOutputType::Message(message))
+            .stop_reason(aws_sdk_bedrockruntime::types::StopReason::ToolUse)
+            .build()
+            .unwrap();
+
+        let decision = client.parse_response(output).unwrap();
+        assert!(decision.needs_notification());
+        assert_eq!(decision.confidence(), None);
+    }
+
+    #[test]
+    fn test_parse_text_response() {
+        let client = make_test_client();
+
+        let message = Message::builder()
+            .role(ConversationRole::Assistant)
+            .content(ContentBlock::Text(
+                r#"{"needs_notification":true,"confidence":"medium","matched_feedback_reason":"test"}"#.to_string(),
+            ))
+            .build()
+            .unwrap();
+
+        let output = ConverseOutput::builder()
+            .output(ConverseOutputType::Message(message))
+            .stop_reason(aws_sdk_bedrockruntime::types::StopReason::EndTurn)
+            .build()
+            .unwrap();
+
+        let decision = client.parse_response(output).unwrap();
+        assert!(decision.needs_notification());
+        assert_eq!(decision.confidence(), Some(&Confidence::Medium));
+    }
+}
