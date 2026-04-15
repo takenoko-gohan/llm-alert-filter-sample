@@ -5,7 +5,7 @@ use std::fmt::Formatter;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) struct FeedbackId(Uuid);
+pub struct FeedbackId(Uuid);
 
 impl fmt::Display for FeedbackId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -20,7 +20,7 @@ impl FeedbackId {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) struct Timestamp(i64);
+pub struct Timestamp(i64);
 
 impl fmt::Display for Timestamp {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

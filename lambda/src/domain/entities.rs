@@ -92,7 +92,7 @@ impl NotificationDecision {
 }
 
 #[derive(Clone, Serialize, Deserialize, TypedBuilder)]
-pub(crate) struct Feedback {
+pub struct Feedback {
     id: FeedbackId,
     created_at: Timestamp,
     log_group: String,

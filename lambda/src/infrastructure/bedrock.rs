@@ -415,6 +415,18 @@ impl Client {
     }
 }
 
+impl crate::application::ports::NotificationJudge for Client {
+    async fn judge(
+        &self,
+        feedback: &[Feedback],
+        message: &str,
+        timestamp: &str,
+    ) -> Result<NotificationDecision, BedrockError> {
+        self.needs_notification_with_retry(feedback, message, timestamp)
+            .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -552,6 +564,139 @@ mod tests {
         let decision = client.parse_response(output).unwrap();
         assert!(decision.needs_notification());
         assert_eq!(decision.confidence(), None);
+    }
+
+    // ── Retry logic tests (aws-smithy-mocks) ──
+
+    fn make_text_output(needs_notification: bool, confidence: &str) -> ConverseOutput {
+        let json = json!({
+            "needs_notification": needs_notification,
+            "confidence": confidence,
+            "matched_feedback_reason": "test reason"
+        });
+        let message = Message::builder()
+            .role(ConversationRole::Assistant)
+            .content(ContentBlock::Text(json.to_string()))
+            .build()
+            .unwrap();
+
+        ConverseOutput::builder()
+            .output(ConverseOutputType::Message(message))
+            .stop_reason(aws_sdk_bedrockruntime::types::StopReason::EndTurn)
+            .build()
+            .unwrap()
+    }
+
+    fn make_throttling_error() -> aws_sdk_bedrockruntime::operation::converse::ConverseError {
+        aws_sdk_bedrockruntime::operation::converse::ConverseError::ThrottlingException(
+            aws_sdk_bedrockruntime::types::error::ThrottlingException::builder()
+                .message("Rate exceeded")
+                .meta(
+                    aws_smithy_types::error::ErrorMetadata::builder()
+                        .code("ThrottlingException")
+                        .build(),
+                )
+                .build(),
+        )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_retry_on_throttling_then_succeed() {
+        use aws_smithy_mocks::{mock, mock_client, RuleMode};
+
+        let throttle =
+            mock!(aws_sdk_bedrockruntime::Client::converse).then_error(make_throttling_error);
+        let success = mock!(aws_sdk_bedrockruntime::Client::converse)
+            .then_output(|| make_text_output(true, "high"));
+
+        let mock_sdk = mock_client!(
+            aws_sdk_bedrockruntime,
+            RuleMode::Sequential,
+            &[&throttle, &success]
+        );
+        let client = Client::builder()
+            .inner_client(mock_sdk)
+            .model_id("test-model".to_string())
+            .max_retries(2)
+            .base_delay_ms(100)
+            .build();
+
+        let result = client
+            .needs_notification_with_retry(&[], "Error: test", "2024-01-01T00:00:00Z")
+            .await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().needs_notification());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_all_retries_exhausted_returns_fail_safe() {
+        use aws_smithy_mocks::{mock, mock_client, RuleMode};
+
+        let t1 = mock!(aws_sdk_bedrockruntime::Client::converse).then_error(make_throttling_error);
+        let t2 = mock!(aws_sdk_bedrockruntime::Client::converse).then_error(make_throttling_error);
+
+        let mock_sdk = mock_client!(aws_sdk_bedrockruntime, RuleMode::Sequential, &[&t1, &t2]);
+        let client = Client::builder()
+            .inner_client(mock_sdk)
+            .model_id("test-model".to_string())
+            .max_retries(1)
+            .base_delay_ms(100)
+            .build();
+
+        let result = client
+            .needs_notification_with_retry(&[], "Error: test", "2024-01-01T00:00:00Z")
+            .await;
+        let decision = result.expect("fail-safe should return Ok");
+        assert!(decision.needs_notification());
+        assert_eq!(decision.confidence(), Some(&Confidence::Low));
+    }
+
+    #[tokio::test]
+    async fn test_non_retryable_error_returns_immediately() {
+        use aws_smithy_mocks::{mock, mock_client};
+
+        let error = mock!(aws_sdk_bedrockruntime::Client::converse).then_error(|| {
+            aws_sdk_bedrockruntime::operation::converse::ConverseError::ValidationException(
+                aws_sdk_bedrockruntime::types::error::ValidationException::builder()
+                    .message("Invalid request")
+                    .build(),
+            )
+        });
+
+        let mock_sdk = mock_client!(aws_sdk_bedrockruntime, &[&error]);
+        let client = Client::builder()
+            .inner_client(mock_sdk)
+            .model_id("test-model".to_string())
+            .max_retries(3)
+            .base_delay_ms(100)
+            .build();
+
+        let result = client
+            .needs_notification_with_retry(&[], "Error: test", "2024-01-01T00:00:00Z")
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_success_on_first_attempt() {
+        use aws_smithy_mocks::{mock, mock_client};
+
+        let success = mock!(aws_sdk_bedrockruntime::Client::converse)
+            .then_output(|| make_text_output(false, "high"));
+
+        let mock_sdk = mock_client!(aws_sdk_bedrockruntime, &[&success]);
+        let client = Client::builder()
+            .inner_client(mock_sdk)
+            .model_id("test-model".to_string())
+            .max_retries(3)
+            .base_delay_ms(100)
+            .build();
+
+        let result = client
+            .needs_notification_with_retry(&[], "Error: test", "2024-01-01T00:00:00Z")
+            .await;
+        assert!(result.is_ok());
+        assert!(!result.unwrap().needs_notification());
     }
 
     #[test]

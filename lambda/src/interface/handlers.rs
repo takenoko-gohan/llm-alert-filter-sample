@@ -1,4 +1,6 @@
+use crate::application::ports::AlertNotifier;
 use crate::application::services::CollectionService;
+use crate::domain::repositories::FeedbackRepository;
 use crate::interface::payloads::{BlockActions, InteractivityPayload};
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -6,10 +8,14 @@ use axum::response::IntoResponse;
 use axum::Form;
 use std::collections::HashMap;
 
-pub(crate) async fn add_feedback_handler(
-    State(state): State<CollectionService>,
+pub(crate) async fn add_feedback_handler<R, S>(
+    State(state): State<CollectionService<R, S>>,
     req: Form<HashMap<String, String>>,
-) -> impl IntoResponse {
+) -> impl IntoResponse
+where
+    R: FeedbackRepository + Clone + 'static,
+    S: AlertNotifier + Clone + 'static,
+{
     let payload = match req.get("payload") {
         Some(payload) => payload,
         None => {

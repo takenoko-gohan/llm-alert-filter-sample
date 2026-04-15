@@ -22,6 +22,9 @@ pub async fn create_feedback_router(
         .slack_channel_id(slack_channel_id)
         .build();
     Router::new()
-        .route("/", post(add_feedback_handler))
+        .route(
+            "/",
+            post(add_feedback_handler::<FeedbackRepositoryImpl, slack::Client>),
+        )
         .with_state(state)
 }

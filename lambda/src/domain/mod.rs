@@ -1,4 +1,4 @@
-pub(crate) mod entities;
+pub mod entities;
 pub mod errors;
-pub(crate) mod repositories;
-pub(crate) mod value_objects;
+pub mod repositories;
+pub mod value_objects;

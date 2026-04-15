@@ -71,3 +71,108 @@ impl FeedbackRepository for FeedbackRepositoryImpl {
         Ok(results)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::repositories::FeedbackRepository;
+    use crate::domain::value_objects::{FeedbackId, Timestamp};
+    use aws_sdk_dynamodb::operation::put_item::PutItemOutput;
+    use aws_sdk_dynamodb::operation::query::QueryOutput;
+    use aws_sdk_dynamodb::types::AttributeValue;
+    use aws_smithy_mocks::{mock, mock_client, RuleMode};
+    use std::collections::HashMap;
+
+    fn make_feedback() -> Feedback {
+        Feedback::builder()
+            .id(FeedbackId::new())
+            .created_at(Timestamp::new())
+            .log_group("/aws/lambda/test".to_string())
+            .message("Error: test".to_string())
+            .needs_notification(false)
+            .reason(Some("known issue".to_string()))
+            .build()
+    }
+
+    #[tokio::test]
+    async fn test_add_feedback_success() {
+        let rule = mock!(aws_sdk_dynamodb::Client::put_item)
+            .then_output(|| PutItemOutput::builder().build());
+        let client = mock_client!(aws_sdk_dynamodb, &[&rule]);
+        let repo = FeedbackRepositoryImpl::builder()
+            .client(client)
+            .table_name("test-table".to_string())
+            .build();
+
+        assert!(repo.add_feedback(make_feedback()).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_list_feedback_returns_items() {
+        let feedback = make_feedback();
+        let item: HashMap<String, AttributeValue> = serde_dynamo::to_item(feedback).unwrap();
+
+        let rule = mock!(aws_sdk_dynamodb::Client::query).then_output(move || {
+            QueryOutput::builder()
+                .set_items(Some(vec![item.clone()]))
+                .build()
+        });
+        let client = mock_client!(aws_sdk_dynamodb, &[&rule]);
+        let repo = FeedbackRepositoryImpl::builder()
+            .client(client)
+            .table_name("test-table".to_string())
+            .build();
+
+        let result = repo.list_feedback_by_log_group("/aws/lambda/test").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_list_feedback_empty() {
+        let rule =
+            mock!(aws_sdk_dynamodb::Client::query).then_output(|| QueryOutput::builder().build());
+        let client = mock_client!(aws_sdk_dynamodb, &[&rule]);
+        let repo = FeedbackRepositoryImpl::builder()
+            .client(client)
+            .table_name("test-table".to_string())
+            .build();
+
+        let result = repo.list_feedback_by_log_group("/aws/lambda/test").await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_feedback_pagination() {
+        let fb1 = make_feedback();
+        let fb2 = make_feedback();
+        let item1: HashMap<String, AttributeValue> = serde_dynamo::to_item(fb1).unwrap();
+        let item2: HashMap<String, AttributeValue> = serde_dynamo::to_item(fb2).unwrap();
+
+        let page1 = mock!(aws_sdk_dynamodb::Client::query).then_output(move || {
+            QueryOutput::builder()
+                .set_items(Some(vec![item1.clone()]))
+                .set_last_evaluated_key(Some(HashMap::from([(
+                    "id".to_string(),
+                    AttributeValue::S("cursor".to_string()),
+                )])))
+                .build()
+        });
+        let page2 = mock!(aws_sdk_dynamodb::Client::query).then_output(move || {
+            QueryOutput::builder()
+                .set_items(Some(vec![item2.clone()]))
+                .build()
+        });
+
+        let client = mock_client!(aws_sdk_dynamodb, RuleMode::Sequential, &[&page1, &page2]);
+        let repo = FeedbackRepositoryImpl::builder()
+            .client(client)
+            .table_name("test-table".to_string())
+            .build();
+
+        let result = repo.list_feedback_by_log_group("/aws/lambda/test").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 2);
+    }
+}

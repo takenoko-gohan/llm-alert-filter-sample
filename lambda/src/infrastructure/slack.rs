@@ -72,129 +72,6 @@ pub struct Client {
 const BASE_URL: &str = "https://slack.com/api";
 
 impl Client {
-    pub(crate) async fn post_alert(
-        &self,
-        channel_id: &str,
-        log_group: &str,
-        message: &str,
-        confidence: Option<&Confidence>,
-    ) -> Result<(), SlackError> {
-        let url = format!("{}/chat.postMessage", BASE_URL);
-
-        let (confidence_emoji, confidence_label) = match confidence {
-            Some(c) => (c.emoji(), c.to_string()),
-            None => (":white_circle:", "unknown".to_string()),
-        };
-
-        let mut blocks = match self.make_base_alert_message(log_group, message).as_array() {
-            Some(blocks) => blocks.to_vec(),
-            None => vec![],
-        };
-        blocks.push(serde_json::json!({
-            "type": "context",
-            "block_id": "confidence",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": format!("{} {}: *{}*", confidence_emoji, self.messages.confidence_label(), confidence_label)
-                }
-            ]
-        }));
-        blocks.push(serde_json::json!({
-            "type": "actions",
-            "block_id": "feedback_button",
-            "elements": [
-                {
-                    "type": "button",
-                    "text": {
-                        "type": "plain_text",
-                        "text": self.messages.feedback_button()
-                    },
-                    "style": "primary",
-                    "value": "send_feedback",
-                    "action_id": "open_modal"
-                }
-            ]
-        }));
-
-        let resp = self
-            .inner_client
-            .post(url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .json(&serde_json::json!({
-                "channel": channel_id,
-                "blocks": blocks
-            }))
-            .send()
-            .await?;
-
-        if resp.status().is_success() {
-            let resp: Response = resp.json().await?;
-            if resp.ok {
-                Ok(())
-            } else {
-                Err(SlackError::PostFailed {
-                    channel: channel_id.to_string(),
-                    detail: resp.error.unwrap_or("Unknown".into()),
-                })
-            }
-        } else {
-            Err(SlackError::PostFailed {
-                channel: channel_id.to_string(),
-                detail: resp.text().await.unwrap_or_default(),
-            })
-        }
-    }
-
-    pub(crate) async fn close_feedback_button(
-        &self,
-        channel_id: &str,
-        ts: &str,
-        log_group: &str,
-        message: &str,
-    ) -> Result<(), SlackError> {
-        let url = format!("{}/chat.update", BASE_URL);
-
-        let mut blocks = match self.make_base_alert_message(log_group, message).as_array() {
-            Some(blocks) => blocks.to_vec(),
-            None => vec![],
-        };
-        blocks.push(serde_json::json!({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": self.messages.feedback_done()
-            }
-        }));
-
-        let resp = self
-            .inner_client
-            .post(url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .json(&serde_json::json!({
-                "channel": channel_id,
-                "ts": ts,
-                "blocks": blocks
-            }))
-            .send()
-            .await?;
-
-        if resp.status().is_success() {
-            let resp: Response = resp.json().await?;
-            if resp.ok {
-                Ok(())
-            } else {
-                Err(SlackError::UpdateFailed {
-                    detail: resp.error.unwrap_or("Unknown".into()),
-                })
-            }
-        } else {
-            Err(SlackError::UpdateFailed {
-                detail: resp.text().await.unwrap_or_default(),
-            })
-        }
-    }
-
     fn make_base_alert_message(&self, log_group: &str, message: &str) -> Value {
         serde_json::json!([
             {
@@ -243,48 +120,6 @@ impl Client {
                 "block_id": "divider"
             }
         ])
-    }
-
-    pub(crate) async fn open_modal(
-        &self,
-        trigger_id: &str,
-        private_metadata: &str,
-    ) -> Result<(), SlackError> {
-        let url = format!("{}/views.open", BASE_URL);
-
-        let view = self.make_feedback_view(private_metadata);
-
-        let resp = self
-            .inner_client
-            .post(url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .json(&serde_json::json!({
-                "trigger_id": trigger_id,
-                "view": view,
-            }))
-            .send()
-            .await?;
-
-        if resp.status().is_success() {
-            let resp: Response = resp.json().await?;
-            if resp.ok {
-                Ok(())
-            } else {
-                Err(SlackError::ModalFailed {
-                    detail: format!(
-                        "error: \"{}\", response_metadata: \"{}\"",
-                        resp.error.unwrap_or_default(),
-                        resp.response_metadata
-                            .map(|v| serde_json::to_string(&v).unwrap_or_default())
-                            .unwrap_or_else(|| "(no metadata)".to_string()),
-                    ),
-                })
-            }
-        } else {
-            Err(SlackError::ModalFailed {
-                detail: resp.text().await.unwrap_or_default(),
-            })
-        }
     }
 
     fn make_feedback_view(&self, private_metadata: &str) -> Value {
@@ -357,6 +192,169 @@ impl Client {
                 "text": msgs.submit()
             },
         })
+    }
+}
+
+impl crate::application::ports::AlertNotifier for Client {
+    async fn post_alert(
+        &self,
+        channel_id: &str,
+        log_group: &str,
+        message: &str,
+        confidence: Option<Confidence>,
+    ) -> Result<(), SlackError> {
+        let url = format!("{}/chat.postMessage", BASE_URL);
+
+        let (confidence_emoji, confidence_label) = match confidence {
+            Some(c) => (c.emoji(), c.to_string()),
+            None => (":white_circle:", "unknown".to_string()),
+        };
+
+        let mut blocks = match self.make_base_alert_message(log_group, message).as_array() {
+            Some(blocks) => blocks.to_vec(),
+            None => vec![],
+        };
+        blocks.push(serde_json::json!({
+            "type": "context",
+            "block_id": "confidence",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": format!("{} {}: *{}*", confidence_emoji, self.messages.confidence_label(), confidence_label)
+                }
+            ]
+        }));
+        blocks.push(serde_json::json!({
+            "type": "actions",
+            "block_id": "feedback_button",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": self.messages.feedback_button()
+                    },
+                    "style": "primary",
+                    "value": "send_feedback",
+                    "action_id": "open_modal"
+                }
+            ]
+        }));
+
+        let resp = self
+            .inner_client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .json(&serde_json::json!({
+                "channel": channel_id,
+                "blocks": blocks
+            }))
+            .send()
+            .await?;
+
+        if resp.status().is_success() {
+            let resp: Response = resp.json().await?;
+            if resp.ok {
+                Ok(())
+            } else {
+                Err(SlackError::PostFailed {
+                    channel: channel_id.to_string(),
+                    detail: resp.error.unwrap_or("Unknown".into()),
+                })
+            }
+        } else {
+            Err(SlackError::PostFailed {
+                channel: channel_id.to_string(),
+                detail: resp.text().await.unwrap_or_default(),
+            })
+        }
+    }
+
+    async fn close_feedback_button(
+        &self,
+        channel_id: &str,
+        ts: &str,
+        log_group: &str,
+        message: &str,
+    ) -> Result<(), SlackError> {
+        let url = format!("{}/chat.update", BASE_URL);
+
+        let mut blocks = match self.make_base_alert_message(log_group, message).as_array() {
+            Some(blocks) => blocks.to_vec(),
+            None => vec![],
+        };
+        blocks.push(serde_json::json!({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": self.messages.feedback_done()
+            }
+        }));
+
+        let resp = self
+            .inner_client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .json(&serde_json::json!({
+                "channel": channel_id,
+                "ts": ts,
+                "blocks": blocks
+            }))
+            .send()
+            .await?;
+
+        if resp.status().is_success() {
+            let resp: Response = resp.json().await?;
+            if resp.ok {
+                Ok(())
+            } else {
+                Err(SlackError::UpdateFailed {
+                    detail: resp.error.unwrap_or("Unknown".into()),
+                })
+            }
+        } else {
+            Err(SlackError::UpdateFailed {
+                detail: resp.text().await.unwrap_or_default(),
+            })
+        }
+    }
+
+    async fn open_modal(&self, trigger_id: &str, private_metadata: &str) -> Result<(), SlackError> {
+        let url = format!("{}/views.open", BASE_URL);
+
+        let view = self.make_feedback_view(private_metadata);
+
+        let resp = self
+            .inner_client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .json(&serde_json::json!({
+                "trigger_id": trigger_id,
+                "view": view,
+            }))
+            .send()
+            .await?;
+
+        if resp.status().is_success() {
+            let resp: Response = resp.json().await?;
+            if resp.ok {
+                Ok(())
+            } else {
+                Err(SlackError::ModalFailed {
+                    detail: format!(
+                        "error: \"{}\", response_metadata: \"{}\"",
+                        resp.error.unwrap_or_default(),
+                        resp.response_metadata
+                            .map(|v| serde_json::to_string(&v).unwrap_or_default())
+                            .unwrap_or_else(|| "(no metadata)".to_string()),
+                    ),
+                })
+            }
+        } else {
+            Err(SlackError::ModalFailed {
+                detail: resp.text().await.unwrap_or_default(),
+            })
+        }
     }
 }
 
