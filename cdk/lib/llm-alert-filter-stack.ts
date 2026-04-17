@@ -234,7 +234,7 @@ export class LlmAlertFilterStack extends cdk.Stack {
 		});
 		new cdk.aws_logs.LogStream(this, "Test1LogStream", {
 			logGroup: test1LogGroup,
-			logStreamName: "hoge-app",
+			logStreamName: "example-app-1",
 		});
 
 		const test2LogGroup = new cdk.aws_logs.LogGroup(this, "Test2LogGroup", {
@@ -253,7 +253,7 @@ export class LlmAlertFilterStack extends cdk.Stack {
 		});
 		new cdk.aws_logs.LogStream(this, "Test2LogStream", {
 			logGroup: test2LogGroup,
-			logStreamName: "fuga-app",
+			logStreamName: "example-app-2",
 		});
 	}
 }
