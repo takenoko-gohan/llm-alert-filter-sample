@@ -81,7 +81,7 @@ Clean Architecture (Domain → Application → Infrastructure → Interface) com
 
 ### Infrastructure (CDK)
 
-- Region: Defaults to us-east-1 (configurable via CDK context / environment variables)
+- Region: Environment-agnostic stack. Resolved at deploy time from the AWS CLI environment (`AWS_REGION` / `AWS_DEFAULT_REGION` / AWS profile).
 - DynamoDB: PAY_PER_REQUEST, GSI `log_group_index`
 - Lambda: ARM_64, 128MB (notifier: 120s / collector: 30s timeout)
 - Secrets Manager: Manages Slack token and signing secret

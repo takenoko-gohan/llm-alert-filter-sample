@@ -20,12 +20,12 @@ flowchart LR
 
 ### Components
 
-| Component | Description |
-|---|---|
-| **Notifier Lambda** | Triggered by CloudWatch Logs subscription filters. Retrieves feedback history from DynamoDB, evaluates the error log via Bedrock Converse API, and posts to Slack if notification is needed. |
-| **Collector Lambda** | Axum-based HTTP endpoint (Function URL). Receives feedback from Slack button interactions / modal submissions and stores it in DynamoDB. |
-| **DynamoDB** | Stores user feedback with a GSI on `log_group` for efficient queries. |
-| **Amazon Bedrock** | Evaluates error logs against feedback history to decide notification necessity, confidence level, and reasoning. |
+| Component            | Description                                                                                                                                                                                  |
+|----------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Notifier Lambda**  | Triggered by CloudWatch Logs subscription filters. Retrieves feedback history from DynamoDB, evaluates the error log via Bedrock Converse API, and posts to Slack if notification is needed. |
+| **Collector Lambda** | Axum-based HTTP endpoint (Function URL). Receives feedback from Slack button interactions / modal submissions and stores it in DynamoDB.                                                     |
+| **DynamoDB**         | Stores user feedback with a GSI on `log_group` for efficient queries.                                                                                                                        |
+| **Amazon Bedrock**   | Evaluates error logs against feedback history to decide notification necessity, confidence level, and reasoning.                                                                             |
 
 ## How It Works
 
@@ -44,6 +44,7 @@ flowchart LR
 - [cargo-lambda](https://github.com/cargo-lambda/cargo-lambda)
 - [Zig](https://ziglang.org/learn/getting-started/) (for cross-compilation)
 - [AWS CDK](https://docs.aws.amazon.com/cdk/v2/guide/getting_started.html)
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (configured with credentials)
 - [Node.js](https://nodejs.org/) (v22+)
 - Amazon Bedrock model access (request via AWS Console)
 
@@ -54,7 +55,15 @@ flowchart LR
 Use `slack_app/manifest.json` to create a Slack App and install it to your workspace.
 Note the **Bot User OAuth Token** and **Signing Secret**.
 
-### 2. Deploy with CDK
+### 2. Set the Target Region
+
+Export `AWS_DEFAULT_REGION` so that both the CDK deployment and the AWS CLI commands below target the same region:
+
+```bash
+export AWS_DEFAULT_REGION=us-east-1
+```
+
+### 3. Deploy with CDK
 
 ```bash
 cd cdk
@@ -63,24 +72,9 @@ npx cdk deploy LlmAlertFilterStack \
   --parameters SlackChannelId="<your-slack-channel-id>"
 ```
 
-To deploy to a specific region, use one of the following methods:
-
-```bash
-# CDK context
-npx cdk deploy LlmAlertFilterStack \
-  -c region=ap-northeast-1 \
-  --parameters SlackChannelId="<your-slack-channel-id>"
-
-# Environment variable
-AWS_DEFAULT_REGION=ap-northeast-1 npx cdk deploy LlmAlertFilterStack \
-  --parameters SlackChannelId="<your-slack-channel-id>"
-```
-
 After deployment, note the **Function URL** of the `llm-alert-filter-collector` Lambda.
 
-### 3. Update Secrets
-
-> **Note:** If your AWS CLI region differs from the deployment region, add `--region <deploy-region>` to each command.
+### 4. Update Secrets
 
 ```bash
 aws secretsmanager put-secret-value \
@@ -92,7 +86,7 @@ aws secretsmanager put-secret-value \
   --secret-string '{"SIGNING_SECRET":"<Signing Secret>","SLACK_TOKEN":"<Bot User OAuth Token>"}'
 ```
 
-### 4. Enable Slack App Interactivity
+### 5. Enable Slack App Interactivity
 
 Enable **Interactivity** in your Slack App settings and set the Request URL to:
 
@@ -100,7 +94,7 @@ Enable **Interactivity** in your Slack App settings and set the Request URL to:
 <collector-function-url>/feedback
 ```
 
-### 5. Verify
+### 6. Verify
 
 Send a log containing "error" to one of the test log groups (`llm-alert-filter-test1` or `llm-alert-filter-test2`) and confirm the Slack notification arrives.
 
@@ -110,27 +104,27 @@ Send a log containing "error" to one of the test log groups (`llm-alert-filter-t
 
 Parameters configurable at deployment time via `--parameters`:
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `SlackChannelId` | String | (required) | Slack channel ID for notifications |
-| `BedrockModelId` | String | `us.amazon.nova-2-lite-v1:0` | Bedrock model ID for inference |
-| `AppLanguage` | String | `en` | Language for prompts and Slack messages (`en` / `ja`) |
-| `MaxRetries` | Number | `3` | Max retries for Bedrock API calls (0-6) |
-| `BaseDelayMs` | Number | `500` | Base delay in ms for exponential backoff (100-10000) |
+| Parameter        | Type   | Default                      | Description                                           |
+|------------------|--------|------------------------------|-------------------------------------------------------|
+| `SlackChannelId` | String | (required)                   | Slack channel ID for notifications                    |
+| `BedrockModelId` | String | `us.amazon.nova-2-lite-v1:0` | Bedrock model ID for inference                        |
+| `AppLanguage`    | String | `en`                         | Language for prompts and Slack messages (`en` / `ja`) |
+| `MaxRetries`     | Number | `3`                          | Max retries for Bedrock API calls (0-6)               |
+| `BaseDelayMs`    | Number | `500`                        | Base delay in ms for exponential backoff (100-10000)  |
 
 ### Environment Variables
 
 Variables automatically set by CDK (listed for reference):
 
-| Variable | Lambda | Description |
-|---|---|---|
-| `TABLE_NAME` | Both | DynamoDB table name |
-| `BEDROCK_MODEL_ID` | Notifier | Bedrock model ID |
-| `APP_LANGUAGE` | Both | Language setting |
-| `MAX_RETRIES` | Notifier | Max retry count |
-| `BASE_DELAY_MS` | Notifier | Base delay for backoff |
-| `SLACK_CHANNEL_ID` | Both | Slack channel ID |
-| `SECRET_ID` | Both | Secrets Manager secret name |
+| Variable           | Lambda   | Description                 |
+|--------------------|----------|-----------------------------|
+| `TABLE_NAME`       | Both     | DynamoDB table name         |
+| `BEDROCK_MODEL_ID` | Notifier | Bedrock model ID            |
+| `APP_LANGUAGE`     | Both     | Language setting            |
+| `MAX_RETRIES`      | Notifier | Max retry count             |
+| `BASE_DELAY_MS`    | Notifier | Base delay for backoff      |
+| `SLACK_CHANNEL_ID` | Both     | Slack channel ID            |
+| `SECRET_ID`        | Both     | Secrets Manager secret name |
 
 ## Testing
 
@@ -156,8 +150,8 @@ npm run check
 
 This application uses serverless and on-demand services, so costs are usage-based:
 
-- **Lambda**: ARM_64, 128 MB memory. Covered by free tier for low-volume use.
-- **DynamoDB**: PAY_PER_REQUEST billing. Covered by free tier for low-volume use.
+- **Lambda**: ARM_64, 128 MB memory. Covered by a free tier for low-volume use.
+- **DynamoDB**: PAY_PER_REQUEST billing. Covered by a free tier for low-volume use.
 - **Bedrock**: Per-token pricing varies by model. See [Amazon Bedrock Pricing](https://aws.amazon.com/bedrock/pricing/).
 - **Secrets Manager**: $0.40/secret/month (as of 2026-04; see [AWS Secrets Manager Pricing](https://aws.amazon.com/secrets-manager/pricing/) for current rates).
 

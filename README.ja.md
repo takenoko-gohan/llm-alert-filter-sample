@@ -20,12 +20,12 @@ flowchart LR
 
 ### コンポーネント
 
-| コンポーネント | 説明 |
-|---|---|
-| **Notifier Lambda** | CloudWatch Logs サブスクリプションフィルタから起動。DynamoDB からフィードバック履歴を取得し、Bedrock Converse API でエラーログを評価、通知が必要な場合は Slack に投稿。 |
-| **Collector Lambda** | Axum ベースの HTTP エンドポイント（Function URL）。Slack のボタン操作・モーダル送信からフィードバックを受け取り、DynamoDB に保存。 |
-| **DynamoDB** | ユーザーフィードバックを保存。`log_group` の GSI で効率的なクエリを実現。 |
-| **Amazon Bedrock** | フィードバック履歴に基づいてエラーログを評価し、通知要否・確信度・理由を返却。 |
+| コンポーネント              | 説明                                                                                                             |
+|----------------------|----------------------------------------------------------------------------------------------------------------|
+| **Notifier Lambda**  | CloudWatch Logs サブスクリプションフィルタから起動。DynamoDB からフィードバック履歴を取得し、Bedrock Converse API でエラーログを評価、通知が必要な場合は Slack に投稿。 |
+| **Collector Lambda** | Axum ベースの HTTP エンドポイント（Function URL）。Slack のボタン操作・モーダル送信からフィードバックを受け取り、DynamoDB に保存。                           |
+| **DynamoDB**         | ユーザーフィードバックを保存。`log_group` の GSI で効率的なクエリを実現。                                                                  |
+| **Amazon Bedrock**   | フィードバック履歴に基づいてエラーログを評価し、通知要否・確信度・理由を返却。                                                                        |
 
 ## 動作の流れ
 
@@ -44,6 +44,7 @@ flowchart LR
 - [cargo-lambda](https://github.com/cargo-lambda/cargo-lambda)
 - [Zig](https://ziglang.org/learn/getting-started/)（クロスコンパイル用）
 - [AWS CDK](https://docs.aws.amazon.com/ja_jp/cdk/v2/guide/getting_started.html)
+- [AWS CLI](https://docs.aws.amazon.com/ja_jp/cli/latest/userguide/getting-started-install.html)（認証情報を設定済みであること）
 - [Node.js](https://nodejs.org/) (v22+)
 - Amazon Bedrock のモデルアクセス（AWS コンソールからリクエスト）
 
@@ -54,7 +55,15 @@ flowchart LR
 `slack_app/manifest.json` を使用して Slack App を作成し、ワークスペースにインストールします。
 **Bot User OAuth Token** と **Signing Secret** を取得しておきます。
 
-### 2. CDK のデプロイ
+### 2. 対象リージョンの設定
+
+`AWS_DEFAULT_REGION` を export しておくことで、以降の CDK デプロイと AWS CLI コマンドが同じリージョンを対象にします。
+
+```bash
+export AWS_DEFAULT_REGION=us-east-1
+```
+
+### 3. CDK のデプロイ
 
 ```bash
 cd cdk
@@ -63,24 +72,9 @@ npx cdk deploy LlmAlertFilterStack \
   --parameters SlackChannelId="<通知先の Slack チャンネル ID>"
 ```
 
-特定のリージョンにデプロイする場合は、以下のいずれかの方法を使用します。
-
-```bash
-# CDK コンテキスト
-npx cdk deploy LlmAlertFilterStack \
-  -c region=ap-northeast-1 \
-  --parameters SlackChannelId="<通知先の Slack チャンネル ID>"
-
-# 環境変数
-AWS_DEFAULT_REGION=ap-northeast-1 npx cdk deploy LlmAlertFilterStack \
-  --parameters SlackChannelId="<通知先の Slack チャンネル ID>"
-```
-
 デプロイ後、`llm-alert-filter-collector` Lambda の **Function URL** を取得しておきます。
 
-### 3. Secret の値を更新
-
-> **注意:** AWS CLI のリージョンがデプロイ先と異なる場合は、各コマンドに `--region <デプロイ先リージョン>` を追加してください。
+### 4. Secret の値を更新
 
 ```bash
 aws secretsmanager put-secret-value \
@@ -92,7 +86,7 @@ aws secretsmanager put-secret-value \
   --secret-string '{"SIGNING_SECRET":"<Signing Secret>","SLACK_TOKEN":"<Bot User OAuth Token>"}'
 ```
 
-### 4. Slack App の Interactivity を有効化
+### 5. Slack App の Interactivity を有効化
 
 Slack App の **Interactivity** を有効化し、以下のリクエスト URL を設定します。
 
@@ -100,7 +94,7 @@ Slack App の **Interactivity** を有効化し、以下のリクエスト URL �
 <collector の Function URL>/feedback
 ```
 
-### 5. 検証
+### 6. 検証
 
 テスト用ロググループ（`llm-alert-filter-test1` または `llm-alert-filter-test2`）に "error" を含むログを送信し、Slack に通知されることを確認します。
 
@@ -110,27 +104,27 @@ Slack App の **Interactivity** を有効化し、以下のリクエスト URL �
 
 デプロイ時に `--parameters` で指定可能なパラメータ:
 
-| パラメータ | 型 | デフォルト | 説明 |
-|---|---|---|---|
-| `SlackChannelId` | String | (必須) | 通知先の Slack チャンネル ID |
-| `BedrockModelId` | String | `us.amazon.nova-2-lite-v1:0` | 推論に使用する Bedrock モデル ID |
-| `AppLanguage` | String | `en` | プロンプトと Slack メッセージの言語（`en` / `ja`） |
-| `MaxRetries` | Number | `3` | Bedrock API の最大リトライ回数（0-6） |
-| `BaseDelayMs` | Number | `500` | 指数バックオフの基本待機時間 ms（100-10000） |
+| パラメータ            | 型      | デフォルト                        | 説明                                 |
+|------------------|--------|------------------------------|------------------------------------|
+| `SlackChannelId` | String | (必須)                         | 通知先の Slack チャンネル ID                |
+| `BedrockModelId` | String | `us.amazon.nova-2-lite-v1:0` | 推論に使用する Bedrock モデル ID             |
+| `AppLanguage`    | String | `en`                         | プロンプトと Slack メッセージの言語（`en` / `ja`） |
+| `MaxRetries`     | Number | `3`                          | Bedrock API の最大リトライ回数（0-6）         |
+| `BaseDelayMs`    | Number | `500`                        | 指数バックオフの基本待機時間 ms（100-10000）       |
 
 ### 環境変数
 
 CDK によって自動設定される環境変数（参考情報）:
 
-| 変数名 | Lambda | 説明 |
-|---|---|---|
-| `TABLE_NAME` | 両方 | DynamoDB テーブル名 |
-| `BEDROCK_MODEL_ID` | Notifier | Bedrock モデル ID |
-| `APP_LANGUAGE` | 両方 | 言語設定 |
-| `MAX_RETRIES` | Notifier | 最大リトライ回数 |
-| `BASE_DELAY_MS` | Notifier | バックオフ基本待機時間 |
-| `SLACK_CHANNEL_ID` | 両方 | Slack チャンネル ID |
-| `SECRET_ID` | 両方 | Secrets Manager シークレット名 |
+| 変数名                | Lambda   | 説明                      |
+|--------------------|----------|-------------------------|
+| `TABLE_NAME`       | 両方       | DynamoDB テーブル名          |
+| `BEDROCK_MODEL_ID` | Notifier | Bedrock モデル ID          |
+| `APP_LANGUAGE`     | 両方       | 言語設定                    |
+| `MAX_RETRIES`      | Notifier | 最大リトライ回数                |
+| `BASE_DELAY_MS`    | Notifier | バックオフ基本待機時間             |
+| `SLACK_CHANNEL_ID` | 両方       | Slack チャンネル ID          |
+| `SECRET_ID`        | 両方       | Secrets Manager シークレット名 |
 
 ## テスト
 

@@ -25,7 +25,7 @@ The system has two Lambda binaries:
 - Prefer fixing root causes over layering on ad-hoc workarounds.
 - Do not commit generated artifacts from `cdk/cdk.out/`, `cdk/node_modules/`, or `lambda/target/`.
 - If you change infrastructure, deployment steps, or developer workflows, update both `README.md` and `README.ja.md` as needed.
-- The default region is `us-east-1` but is configurable via CDK context or environment variables (`CDK_DEFAULT_REGION`, `AWS_DEFAULT_REGION`).
+- The stack is environment-agnostic; the deployment region is resolved from the AWS CLI environment (`AWS_REGION` / `AWS_DEFAULT_REGION` / AWS profile) at deploy time.
 
 ## Project Structure
 
