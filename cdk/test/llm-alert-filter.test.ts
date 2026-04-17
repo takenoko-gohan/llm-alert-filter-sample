@@ -2,11 +2,7 @@
 jest.mock("cargo-lambda-cdk", () => {
 	const cdkLib = require("aws-cdk-lib");
 	class RustFunction extends cdkLib.aws_lambda.Function {
-		constructor(
-			scope: unknown,
-			id: string,
-			props: Record<string, unknown>,
-		) {
+		constructor(scope: unknown, id: string, props: Record<string, unknown>) {
 			const {
 				manifestPath: _m,
 				binaryName: _b,
